@@ -37,5 +37,7 @@ next-env.d.ts
 .env
 .env*.local
 
-# Convex generated code
-**/convex/_generated/
+# NOTE: convex/_generated is intentionally committed (not ignored). Convex's
+# guidance is to commit generated code so the project typechecks without running
+# the Convex CLI first — CI has no deploy key and never generates it. Regenerate
+# it with `npx convex codegen` and commit it alongside any schema change.

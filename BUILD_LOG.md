@@ -115,3 +115,10 @@
   the docs excluded the `_generated/*.d.ts` files it needs).
 - **`import.meta.glob` typing.** That Vite API isn't in the default TS lib; added
   `/// <reference types="vite/client" />` to the test so `tsc --noEmit` stays clean.
+- **CI typecheck fix (PR #3).** P0 gitignored `**/convex/_generated/`, but CI has
+  no deploy key and never runs the Convex CLI, so a fresh checkout had no
+  generated types and `tsc` failed with `Cannot find module './_generated/…'`.
+  Fix: stopped ignoring `convex/_generated` and committed it. **Reminder for the
+  next schema change: `convex/_generated` is committed — after editing
+  `schema.ts`, run `npx convex codegen` and commit the regenerated
+  `_generated` alongside it, or CI typecheck will drift/break.**
