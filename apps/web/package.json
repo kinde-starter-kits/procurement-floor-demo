@@ -1,0 +1,28 @@
+{
+  "name": "@procurement-floor/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kinde-oss/kinde-auth-nextjs": "^2.13.0",
+    "@kinde-oss/kinde-convex-agent-auth": "file:../../vendor/kinde-oss-kinde-convex-agent-auth-0.1.0.tgz",
+    "convex": "^1.42.0",
+    "next": "^15.5.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "^15.5.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -23,3 +23,19 @@ coverage/
 
 # ---------------------------------------------------------------------
 # Add specific rules here…
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Next.js
+.next/
+out/
+.vercel
+next-env.d.ts
+
+# Environment (secrets — never commit)
+.env
+.env*.local
+
+# Convex generated code
+**/convex/_generated/
