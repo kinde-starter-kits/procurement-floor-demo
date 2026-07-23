@@ -122,3 +122,72 @@
   next schema change: `convex/_generated` is committed — after editing
   `schema.ts`, run `npx convex codegen` and commit the regenerated
   `_generated` alongside it, or CI typecheck will drift/break.**
+
+## P2 — Kinde human auth and three agent identities
+
+This phase establishes identity only. Nothing enforces authority yet.
+
+### What was built
+
+- **Human auth** (`apps/web`):
+  - `app/api/auth/[kindeAuth]/route.ts` — Kinde `handleAuth()` (login / logout /
+    register / callback).
+  - `lib/kinde-session.ts` — `getActingUser()` returns `{subject, orgCode,
+    permissions}` read **only** from `getKindeServerSession()` (verified session);
+    no header/query/body input. Fails closed: throws if unauthenticated or if any
+    of subject / orgCode / permissions is missing.
+  - `app/api/me/route.ts` — returns the helper output, 401 on fail-closed.
+  - `app/page.tsx` — sign-in/out links and a session panel.
+- **Agent identities** (`apps/web/convex/agents.ts`):
+  - `register` (internalAction) wraps the component's admin-only
+    `agents.register`, mapping each agent to its Kinde M2M `client_id` + scopes.
+    Registered org-less on purpose (M2M `client_credentials` tokens are org-less;
+    an org-bound agent would reject them with `org_code_required_for_org_agent`).
+  - `verify` (internalAction) calls the component's `verifyCaller` seam.
+  - Three agents registered: sourcing (`procurement:read`, `quotes:request`),
+    negotiation (`procurement:read`, `quotes:negotiate`), ordering
+    (`procurement:read`, `orders:place:t1`).
+
+### Secrets handling
+
+- Deployment env only: `KINDE_DOMAIN=devrelstudio.kinde.com`,
+  `KINDE_AUDIENCE=procurement-floor-api`, a fresh random `DELEGATION_SIGNING_SECRET`
+  (replaced the P0/P1 placeholder), and `MODE=live` (flipped off `test`).
+- Web-app client id/secret + issuer/site URLs in `apps/web/.env.local` (gitignored).
+- M2M client secrets never touched the repo — used transiently to mint tokens.
+
+### What was verified (STOP gate)
+
+- **Three agent tokens through `verifyCaller` (live mode), distinct subjects:**
+  each real `client_credentials` token resolved to its own subject (the M2M
+  `azp`/client id), its own `agentId`, and its granted scopes — sourcing,
+  negotiation, ordering all distinct.
+- **`MODE` is `live`** on the deployment (`npx convex env get MODE` → `live`).
+- **Human wiring proven:** unauthenticated `GET /api/me` → 401 `not_authenticated`
+  (fail-closed); `GET /api/auth/login` → 307 to
+  `devrelstudio.kinde.com/oauth2/auth` with the correct `client_id`,
+  `redirect_uri`, and `audience`.
+- `npm run typecheck`, `npm test` (2 passed), `npm run check:boundary` — all green.
+- `npx convex dev --once` — pushed, "Convex functions ready", exit 0.
+- **Live per-role signed-in sessions — CONFIRMED.** The owner completed the three
+  passwordless (email-code) sign-ins; `GET /api/me` returned the correct verified
+  identity for each, three distinct subjects, all in `org_d26a1b1345f3d`:
+  - Requester (`kp_c13368…`) → `procurement:read`, `quotes:request`
+  - Buyer (`kp_60c416…`) → `+ quotes:negotiate`, `orders:place:t1`
+  - Director (`kp_1af9e0e…`) → `+ orders:place:t2`, `orders:place:t3`
+  Permissions came through on the role-based token with no custom audience
+  requested, confirming the audience-whitelist fix below.
+
+### Note
+
+- The component build (v0.1.0) exposes registration as `agents.register`; there is
+  no export literally named `provisionAgent`.
+- **Web app must not request the API audience unless whitelisted.** Setting
+  `KINDE_AUDIENCE` on the web app made the SDK add `audience=procurement-floor-api`
+  to the auth request, which Kinde rejected (`Requested audience … has not been
+  whitelisted by the OAuth 2.0 Client`). The human session doesn't need that
+  audience — permissions come from the user's roles and the human token never
+  goes through `verifyCaller` — so `KINDE_AUDIENCE` was removed from
+  `apps/web/.env.local`. (The Convex deployment keeps its own `KINDE_AUDIENCE`
+  for M2M token verification.) If a future need requires audience-bound human
+  tokens, whitelist the Web app for the API in the Kinde dashboard instead.
