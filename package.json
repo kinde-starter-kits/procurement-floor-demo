@@ -1,0 +1,19 @@
+{
+  "name": "procurement-floor-demo",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "check:boundary": "tsx scripts/check-boundary.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.0"
+  }
+}
