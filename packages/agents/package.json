@@ -2,9 +2,19 @@
   "name": "@procurement-floor/agents",
   "version": "0.0.0",
   "private": true,
-  "description": "LangGraph + Trigger.dev agents for the procurement floor. No source yet (lands in P4).",
+  "type": "module",
+  "description": "LangGraph agent graph (sourcing -> negotiation -> ordering) running inside a Trigger.dev task.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "trigger:dev": "npx trigger.dev@latest dev"
+  },
   "dependencies": {
     "@langchain/langgraph": "^1.4.0",
+    "@procurement-floor/api-client": "*",
     "@trigger.dev/sdk": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^5.9.0"
   }
 }

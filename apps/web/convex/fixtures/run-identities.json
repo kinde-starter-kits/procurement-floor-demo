@@ -1,0 +1,66 @@
+{
+  "runId": "2de9b0d6-bfcc-4a3a-8fc9-bcd2e9472572",
+  "orgCode": "org_d26a1b1345f3d",
+  "events": [
+    {
+      "seq": 0,
+      "kind": "run.started",
+      "subject": "250c9a4619364a9e8e6f02f884a2358e"
+    },
+    {
+      "seq": 1,
+      "kind": "sourcing.searching",
+      "subject": "250c9a4619364a9e8e6f02f884a2358e"
+    },
+    {
+      "seq": 2,
+      "kind": "sourcing.shortlisted",
+      "subject": "250c9a4619364a9e8e6f02f884a2358e"
+    },
+    {
+      "seq": 3,
+      "kind": "handoff",
+      "subject": "250c9a4619364a9e8e6f02f884a2358e"
+    },
+    {
+      "seq": 4,
+      "kind": "negotiation.quotes_requested",
+      "subject": "4d8469ba475d47ac85c61452b080341a"
+    },
+    {
+      "seq": 5,
+      "kind": "negotiation.round",
+      "subject": "4d8469ba475d47ac85c61452b080341a"
+    },
+    {
+      "seq": 6,
+      "kind": "negotiation.round",
+      "subject": "4d8469ba475d47ac85c61452b080341a"
+    },
+    {
+      "seq": 7,
+      "kind": "negotiation.ranked",
+      "subject": "4d8469ba475d47ac85c61452b080341a"
+    },
+    {
+      "seq": 8,
+      "kind": "handoff",
+      "subject": "4d8469ba475d47ac85c61452b080341a"
+    },
+    {
+      "seq": 9,
+      "kind": "ordering.order_placed",
+      "subject": "20a4f1b19e234ea1908051ab20060ba4"
+    },
+    {
+      "seq": 10,
+      "kind": "run.completed",
+      "subject": "20a4f1b19e234ea1908051ab20060ba4"
+    }
+  ],
+  "phaseSubjects": {
+    "sourcing": "250c9a4619364a9e8e6f02f884a2358e",
+    "negotiation": "4d8469ba475d47ac85c61452b080341a",
+    "ordering": "20a4f1b19e234ea1908051ab20060ba4"
+  }
+}
