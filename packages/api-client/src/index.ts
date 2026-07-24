@@ -1,40 +1,74 @@
 /**
  * @procurement-floor/api-client
  *
- * A thin, dependency-free client for the procurement floor API. The factory
- * takes every credential explicitly: there are no defaults, no environment
- * variable fallbacks, and no module-level token. Callers must supply the agent
- * token, the delegation grant, and the base URL on every construction.
- *
- * Methods are stubs until the API surface lands in a later phase. Each throws
- * a `NotImplementedError` so accidental use fails loudly rather than silently
- * returning undefined.
+ * The ONLY channel an agent node uses to reach the app. It is dependency-free
+ * (global fetch) and knows nothing about Convex, Qdrant, or the web app's
+ * internals. Every call carries the node's own Kinde M2M token and the run
+ * delegation; the server derives org and run from those verified credentials,
+ * never from the request body.
  */
 
 export interface CreateFloorClientOptions {
-  /** Bearer token identifying the calling agent. */
+  /** The calling node's own Kinde M2M access token. */
   agentToken: string;
-  /** Delegation grant authorizing the agent to act on a principal's behalf. */
+  /** The run delegation id (carries the runId, verified server-side). */
   delegation: string;
-  /** Absolute base URL of the procurement floor API. */
+  /** Base URL of the app, e.g. http://localhost:3000. */
   baseUrl: string;
 }
 
-export class NotImplementedError extends Error {
-  readonly code = 'not_implemented';
-  constructor(method: string) {
-    super(`not_implemented: ${method}`);
-    this.name = 'NotImplementedError';
-  }
+export interface SupplierMatch {
+  supplierId: string;
+  name: string;
+  region: string;
+  certifications: string[];
+  capabilities: string;
+  score: number;
+}
+
+export interface CreateQuoteInput {
+  requisitionId: string;
+  supplierId: string;
+  amountCents: number;
+  terms: string;
+  round: number;
+  status: string;
+}
+
+export interface NegotiationRoundInput {
+  requisitionId: string;
+  round: number;
+  summary: string;
+  startedAt: number;
+}
+
+export interface PlaceOrderInput {
+  requisitionId: string;
+  quoteId: string;
+  amountCents: number;
+  placedByAgent: string;
+  status: string;
+  correlationId: string;
 }
 
 export interface FloorClient {
-  /** List purchase orders visible to the delegated principal. */
-  listOrders(): Promise<never>;
-  /** Fetch a single purchase order by id. */
-  getOrder(orderId: string): Promise<never>;
-  /** Submit a new purchase order for approval. */
-  createOrder(input: unknown): Promise<never>;
+  searchSuppliers(query: string, limit?: number): Promise<SupplierMatch[]>;
+  createQuote(input: CreateQuoteInput): Promise<{quoteId: string}>;
+  recordNegotiationRound(input: NegotiationRoundInput): Promise<void>;
+  placeOrder(input: PlaceOrderInput): Promise<{orderId: string}>;
+  /** Append a runEvents row. org/run come from the verified credentials. */
+  writeEvent(kind: string, payload: Record<string, unknown>): Promise<{seq: number}>;
+}
+
+export class FloorClientError extends Error {
+  constructor(
+    readonly status: number,
+    readonly path: string,
+    readonly detail: unknown
+  ) {
+    super(`floor_client_error ${status} ${path}`);
+    this.name = 'FloorClientError';
+  }
 }
 
 function required(value: string, name: keyof CreateFloorClientOptions): string {
@@ -45,25 +79,47 @@ function required(value: string, name: keyof CreateFloorClientOptions): string {
 }
 
 export function createFloorClient(opts: CreateFloorClientOptions): FloorClient {
-  // Validate up front — all three are mandatory, no defaults, no env fallback.
   const agentToken = required(opts.agentToken, 'agentToken');
   const delegation = required(opts.delegation, 'delegation');
-  const baseUrl = required(opts.baseUrl, 'baseUrl');
+  const baseUrl = required(opts.baseUrl, 'baseUrl').replace(/\/$/, '');
 
-  // Held in closure only; never assigned to module scope.
-  void agentToken;
-  void delegation;
-  void baseUrl;
+  async function post<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${agentToken}`,
+        'x-floor-delegation': delegation
+      },
+      body: JSON.stringify(body)
+    });
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : {};
+    if (!res.ok) {
+      throw new FloorClientError(res.status, path, data);
+    }
+    return data as T;
+  }
 
   return {
-    async listOrders() {
-      throw new NotImplementedError('listOrders');
+    async searchSuppliers(query, limit = 5) {
+      const {results} = await post<{results: SupplierMatch[]}>('/api/suppliers/search', {
+        query,
+        limit
+      });
+      return results;
     },
-    async getOrder(_orderId: string) {
-      throw new NotImplementedError('getOrder');
+    createQuote(input) {
+      return post<{quoteId: string}>('/api/quotes', input);
     },
-    async createOrder(_input: unknown) {
-      throw new NotImplementedError('createOrder');
+    async recordNegotiationRound(input) {
+      await post<unknown>('/api/negotiation-rounds', input);
+    },
+    placeOrder(input) {
+      return post<{orderId: string}>('/api/orders', input);
+    },
+    writeEvent(kind, payload) {
+      return post<{seq: number}>('/api/events', {kind, payload});
     }
   };
 }

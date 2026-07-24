@@ -9,7 +9,12 @@
  */
 
 import type * as agents from "../agents.js";
+import type * as events from "../events.js";
 import type * as http from "../http.js";
+import type * as negotiationRounds from "../negotiationRounds.js";
+import type * as orders from "../orders.js";
+import type * as quotes from "../quotes.js";
+import type * as runs from "../runs.js";
 import type * as suppliers from "../suppliers.js";
 
 import type {
@@ -20,7 +25,12 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agents: typeof agents;
+  events: typeof events;
   http: typeof http;
+  negotiationRounds: typeof negotiationRounds;
+  orders: typeof orders;
+  quotes: typeof quotes;
+  runs: typeof runs;
   suppliers: typeof suppliers;
 }>;
 

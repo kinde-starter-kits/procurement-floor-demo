@@ -251,3 +251,66 @@ supplier capability text.
   a dev/demo seed entry point on a dev deployment.
 - Local Qdrant runs in Docker as container `qdrant-p3` (`docker rm -f qdrant-p3`
   to remove). Deployed demo would set `QDRANT_URL`/`QDRANT_API_KEY` to Qdrant Cloud.
+
+## P4 — Agent graph in a Trigger.dev task
+
+Three agents (sourcing → negotiation → ordering) run as a LangGraph graph inside
+one Trigger.dev task. This phase records handoffs; nothing enforces scopes yet.
+
+### What was built
+
+- **`packages/agents`** — LangGraph `StateGraph` with three nodes and real
+  handoffs, wrapped in the `procurement-run` Trigger.dev task. Negotiation rounds
+  are separate retryable steps (`retry.onThrow`). Each node calls `openSession`,
+  which mints that node's OWN Kinde M2M token from its OWN client credentials and
+  returns a `createFloorClient`. **No node imports the Convex client, no node
+  reuses another's token, no ambient credentials.** `check:boundary` confirms the
+  package is clean of `convex`/`apps`.
+- **`packages/api-client`** — real `createFloorClient`: dependency-free, fetch
+  only; sends the node token (`Authorization: Bearer`) and the run delegation
+  (`X-Floor-Delegation`) on every call.
+- **App routes** (Node runtime): `/api/runs/trigger` (verifies the starter token,
+  creates the requisition, issues the run delegation, triggers the task, returns
+  immediately), `/api/events`, `/api/quotes`, `/api/negotiation-rounds`,
+  `/api/orders`. Every route derives `orgCode` from the verified token and (for
+  events) `runId` from the verified delegation — never from the body. Each event
+  is stamped with the acting agent's verified subject.
+- **runId in a verified credential**: `runs.start` issues a component delegation
+  whose `resources` carries `run:<runId>`; `runs.resolveDelegation` verifies the
+  HMAC and reads the runId back out. The delegation is issued with empty scopes
+  (P4 doesn't enforce; it only needs to carry the runId, and empty scopes are
+  always a valid subset of the issuer's grants — avoids `scopes_exceed_agent`).
+- **Two paths**: deterministic negotiation by default (fixed ~4%/round concession,
+  no model, always works). Optional BYOK path (`NEGOTIATION_STRATEGY=byok` +
+  `BYOK_*`) asks a real OpenAI-compatible model and falls back to deterministic on
+  any error, so a run never depends on it. Only the deterministic path is exercised.
+
+### What was verified (STOP gate)
+
+- **One full deterministic run, end to end, produced an order.** Requisition
+  "Cold-chain vaccine distribution" → sourcing shortlisted Polar Route / Continental
+  Bulk / Summit → negotiation ran rounds 1–3 → ranked Continental Bulk Logistics
+  ($41,472) → ordering placed the order (`status: placed`, correlationId = runId).
+- **runEvents sequence readable start to finish** (11 events, seq 0–10): run.started
+  → sourcing.searching/shortlisted/handoff → negotiation.quotes_requested/round×2/
+  ranked/handoff → ordering.order_placed → run.completed. Each event carries the
+  acting subject.
+- **Three distinct `sub` claims in that run**: sourcing `250c9a46…`, negotiation
+  `4d8469ba…`, ordering `20a4f1b1…`. Proven by the new test
+  (`apps/web/convex/run-identities.test.ts`) over a fixture captured verbatim from
+  the run's `runEvents`. It runs in `npm test`, and `npm test` is now a CI step —
+  so the third gate is enforced in CI (with no live credentials).
+- `npm run typecheck`, `npm test` (5 passed), `npm run check:boundary` — green.
+  `npx convex dev --once` — pushed, exit 0.
+
+### Notes
+
+- **Trigger.dev auth**: the app enqueues with the project secret key
+  (`TRIGGER_SECRET_KEY`); the local worker (`trigger.dev dev`) authenticates with a
+  Personal Access Token (`TRIGGER_ACCESS_TOKEN`). Both live in gitignored env
+  (`packages/agents/.env`, `apps/web/.env.local`); never the repo. The
+  project ref (not a secret) is in `trigger.config.ts`.
+- **CI test step added**: `ci.yml` now runs `npm test` (previously it didn't), so
+  the tenancy tests (P1) and the identity gate (P4) are both enforced in CI.
+- The identity fixture is real captured output; re-running the demo and
+  re-capturing keeps it honest as the graph evolves.
