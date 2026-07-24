@@ -1,12 +1,13 @@
-import {defineConfig} from 'vitest/config';
+import {defineConfig, configDefaults} from 'vitest/config';
 
-// convex-test runs Convex functions in an edge-runtime VM and must not be
-// pre-bundled, so it is inlined.
+// Default suite: fast, CI-safe (edge-runtime, convex-test). Integration tests
+// that need local Qdrant + ONNX are excluded here and run via
+// vitest.integration.config.ts.
 export default defineConfig({
   test: {
     environment: 'edge-runtime',
     server: {deps: {inline: ['convex-test']}},
-    // Print individual test names on every run (including CI).
-    reporters: ['verbose']
+    reporters: ['verbose'],
+    exclude: [...configDefaults.exclude, '**/*.integration.test.ts']
   }
 });

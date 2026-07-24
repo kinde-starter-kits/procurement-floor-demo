@@ -8,11 +8,15 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "seed": "tsx scripts/seed-suppliers.ts"
   },
   "dependencies": {
     "@kinde-oss/kinde-auth-nextjs": "^2.13.0",
     "@kinde-oss/kinde-convex-agent-auth": "file:../../vendor/kinde-oss-kinde-convex-agent-auth-0.1.0.tgz",
+    "@qdrant/js-client-rest": "^1.18.0",
+    "@xenova/transformers": "^2.17.2",
     "convex": "^1.42.0",
     "next": "^15.5.0",
     "react": "^19.0.0",
