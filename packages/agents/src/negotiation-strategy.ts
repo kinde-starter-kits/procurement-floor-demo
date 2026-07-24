@@ -13,15 +13,11 @@ export interface RevisionContext {
   requisitionTitle: string;
 }
 
-function deterministicRevision(amountCents: number): number {
-  return Math.round(amountCents * 0.96);
-}
-
-async function byokRevision(amountCents: number, ctx: RevisionContext): Promise<number> {
+async function byokRevision(targetCents: number, ctx: RevisionContext): Promise<number> {
   const baseUrl = process.env.BYOK_BASE_URL;
   const apiKey = process.env.BYOK_API_KEY;
   const model = process.env.BYOK_MODEL;
-  if (!baseUrl || !apiKey || !model) return deterministicRevision(amountCents);
+  if (!baseUrl || !apiKey || !model) return targetCents;
 
   try {
     const res = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
@@ -38,7 +34,7 @@ async function byokRevision(amountCents: number, ctx: RevisionContext): Promise<
           },
           {
             role: 'user',
-            content: `Round ${ctx.round}. Supplier "${ctx.supplierName}" for "${ctx.requisitionTitle}". Current offer is ${amountCents} cents. Propose a lower revised offer.`
+            content: `Round ${ctx.round}. Supplier "${ctx.supplierName}" for "${ctx.requisitionTitle}". Target offer is ${targetCents} cents. Propose a lower revised offer.`
           }
         ]
       })
@@ -48,17 +44,21 @@ async function byokRevision(amountCents: number, ctx: RevisionContext): Promise<
       (data.choices?.[0]?.message?.content ?? '').replace(/[^0-9]/g, ''),
       10
     );
-    if (Number.isFinite(parsed) && parsed > 0 && parsed < amountCents) return parsed;
+    if (Number.isFinite(parsed) && parsed > 0 && parsed < targetCents) return parsed;
   } catch {
-    // fall through to deterministic
+    // fall through to the deterministic target
   }
-  return deterministicRevision(amountCents);
+  return targetCents;
 }
 
-/** Revise one offer using the configured strategy. */
-export function reviseOffer(amountCents: number, ctx: RevisionContext): Promise<number> {
+/**
+ * Settle one offer for a round. Deterministic by default: returns the computed
+ * target unchanged, so the run is exactly reproducible. BYOK (optional) may
+ * return a different (lower) figure from a real model, falling back to the target.
+ */
+export function reviseOffer(targetCents: number, ctx: RevisionContext): Promise<number> {
   if (process.env.NEGOTIATION_STRATEGY === 'byok') {
-    return byokRevision(amountCents, ctx);
+    return byokRevision(targetCents, ctx);
   }
-  return Promise.resolve(deterministicRevision(amountCents));
+  return Promise.resolve(targetCents);
 }

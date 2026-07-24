@@ -17,6 +17,7 @@ interface QuoteWork {
   name: string;
   amountCents: number;
   round: number;
+  factor: number;
 }
 
 interface OrderResult {
@@ -41,15 +42,17 @@ const State = Annotation.Root({
   })
 });
 
-// Deterministic pricing — no randomness, no model call.
-function hashString(s: string): number {
-  let h = 0;
-  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return h;
+// Deterministic pricing — no randomness, no model call. Suppliers are ranked by
+// search score; the best match settles cheapest. Offers step down each round to a
+// per-supplier target fraction of budget, so the winner is exactly reproducible.
+//   winner = round(budget * 0.71)  =>  budget $200,000 lands the order at $142,000.
+const TARGET_FACTORS = [0.71, 0.78, 0.85];
+function targetFactor(rank: number): number {
+  return TARGET_FACTORS[rank] ?? 0.85 + (rank - 2) * 0.05;
 }
-function initialAmount(budgetCents: number, supplierId: string): number {
-  const factor = 0.9 + (hashString(supplierId) % 8) / 100; // 0.90 .. 0.97
-  return Math.round(budgetCents * factor);
+function roundAmount(budgetCents: number, factor: number, round: number): number {
+  const offset = 0.1 - 0.05 * (round - 1); // r1:+0.10  r2:+0.05  r3:+0.00
+  return Math.round(budgetCents * (factor + offset));
 }
 
 async function sourcingNode(state: typeof State.State) {
@@ -61,10 +64,14 @@ async function sourcingNode(state: typeof State.State) {
   await client.writeEvent('sourcing.shortlisted', {
     suppliers: shortlist.map((s) => ({name: s.name, supplierId: s.supplierId, score: s.score}))
   });
+
+  // Handoff: mint the negotiation hop of the delegation chain.
+  const grant = await client.handoff({toStep: 'negotiation'});
   await client.writeEvent('handoff', {
     from: 'sourcing',
     to: 'negotiation',
-    shortlist: shortlist.map((s) => s.name)
+    shortlist: shortlist.map((s) => s.name),
+    grantedScopes: grant.scopes
   });
 
   return {shortlist, subjects: {sourcing: subject}};
@@ -76,8 +83,10 @@ async function negotiationNode(state: typeof State.State) {
 
   // Round 1: request an initial quote from each shortlisted supplier.
   let quotes: QuoteWork[] = [];
-  for (const s of state.shortlist) {
-    const amountCents = initialAmount(budgetCents, s.supplierId);
+  for (let i = 0; i < state.shortlist.length; i++) {
+    const s = state.shortlist[i];
+    const factor = targetFactor(i);
+    const amountCents = roundAmount(budgetCents, factor, 1);
     const {quoteId} = await client.createQuote({
       requisitionId,
       supplierId: s.supplierId,
@@ -86,7 +95,7 @@ async function negotiationNode(state: typeof State.State) {
       round: 1,
       status: 'submitted'
     });
-    quotes.push({quoteId, supplierId: s.supplierId, name: s.name, amountCents, round: 1});
+    quotes.push({quoteId, supplierId: s.supplierId, name: s.name, amountCents, round: 1, factor});
   }
   await client.writeEvent('negotiation.quotes_requested', {
     round: 1,
@@ -99,7 +108,8 @@ async function negotiationNode(state: typeof State.State) {
       async () => {
         const revised: QuoteWork[] = [];
         for (const q of quotes) {
-          const amountCents = await reviseOffer(q.amountCents, {
+          const target = roundAmount(budgetCents, q.factor, round);
+          const amountCents = await reviseOffer(target, {
             round,
             supplierName: q.name,
             requisitionTitle: state.requisition.title
@@ -135,7 +145,16 @@ async function negotiationNode(state: typeof State.State) {
   await client.writeEvent('negotiation.ranked', {
     winner: {name: winner.name, amountCents: winner.amountCents, quoteId: winner.quoteId}
   });
-  await client.writeEvent('handoff', {from: 'negotiation', to: 'ordering', winner: winner.name});
+
+  // Handoff: mint the ordering hop. Its scope (orders:place:tN) is derived from
+  // the winning amount — this is where broken mode over-provisions authority.
+  const grant = await client.handoff({toStep: 'ordering', amountCents: winner.amountCents});
+  await client.writeEvent('handoff', {
+    from: 'negotiation',
+    to: 'ordering',
+    winner: winner.name,
+    grantedScopes: grant.scopes
+  });
 
   return {quotes, winner, subjects: {negotiation: subject}};
 }

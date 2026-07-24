@@ -1,0 +1,40 @@
+{
+  "mode": "broken",
+  "requesterScopes": [
+    "procurement:read",
+    "quotes:request"
+  ],
+  "chain": [
+    {
+      "hop": 1,
+      "subject": "sourcing",
+      "scopes": [
+        "procurement:read",
+        "quotes:request"
+      ]
+    },
+    {
+      "hop": 2,
+      "subject": "negotiation",
+      "scopes": [
+        "procurement:read",
+        "quotes:request",
+        "quotes:negotiate"
+      ]
+    },
+    {
+      "hop": 3,
+      "subject": "ordering",
+      "scopes": [
+        "procurement:read",
+        "quotes:request",
+        "quotes:negotiate",
+        "orders:place:t2"
+      ]
+    }
+  ],
+  "order": {
+    "supplier": "Polar Route Freight Systems",
+    "amountCents": 14200000
+  }
+}

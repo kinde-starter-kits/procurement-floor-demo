@@ -314,3 +314,62 @@ one Trigger.dev task. This phase records handoffs; nothing enforces scopes yet.
   the tenancy tests (P1) and the identity gate (P4) are both enforced in CI.
 - The identity fixture is real captured output; re-running the demo and
   re-capturing keeps it honest as the graph evolves.
+
+## P5 — Broken mode and the escalation repro
+
+Reproduces the authority-escalation bug: at each handoff the app mints the next
+delegation with the scopes the *task* needs, instead of inheriting from the
+person who asked. The chain grows as it travels. Builds `broken` only.
+
+### What was built
+
+- **Mode switch** (`apps/web/convex/authz.ts`): `authzMode()` reads `AUTHZ_MODE`
+  from the deployment env ONLY — never a header, body, or query param. `broken`
+  grows scopes (`nextScopes` = parent ∪ next-step needs, no intersection);
+  `attenuated` throws `not_implemented` (P6).
+- **Broken chain** (`convex/runs.ts`, `convex/handoffs.ts`): replaced P4's single
+  empty-scope stopgap. `runs.start` records the requester's ceiling and mints
+  hop 1 (sourcing). `handoffs.mint` mints each subsequent hop with grown scopes;
+  the ordering hop's scope (`orders:place:tN`) is derived from the winning amount
+  (`orderTier`: $142,000 → t2). **Every `delegations` row records its effective
+  scopes** with a `parentDelegationId` link, so the chain reads back afterward.
+- **Handoff seam**: new `/api/handoff` route + `FloorClient.handoff` — nodes mint
+  the next hop at each handoff. org/runId come from the verified token+delegation;
+  `toStep`/`amountCents` are work data; the MODE is never from the request.
+- **Deterministic pricing** (`packages/agents`): suppliers ranked by search score
+  settle to per-rank target fractions of budget; the winner = `round(budget*0.71)`.
+  Budget $200,000 → winner exactly **$142,000** (tier 2), same every run.
+
+### What was verified (STOP gate)
+
+- **Repro, one command** (`npm run repro`): started by a requester holding only
+  `procurement:read, quotes:request`, it places a **$142,000** order (Polar Route
+  Freight Systems) — a tier-2 purchase the requester could never authorize.
+- **runEvents show the growth** (scope set at each hop, side by side):
+  - hop 1 sourcing: `[procurement:read, quotes:request]`
+  - hop 2 negotiation: `[…, quotes:negotiate]`
+  - hop 3 ordering: `[…, quotes:negotiate, orders:place:t2]`  ← `orders:place:t2`
+    appears from nowhere (`delegation.minted` at seq 10, `tier=t2`).
+- **delegations rows** show the chain growing with `parentDelegationId` links and
+  effective scopes per hop.
+- **Test** (`convex/escalation.test.ts`, default suite → CI): asserts broken mode,
+  the requester holds no `orders:place:*`, the chain grows, and the $142,000
+  tier-2 order is placed above the ceiling. P6 flips this same test to a denial.
+- **Mode cannot be set from a request**: injecting `attenuated` via header + query
+  + body while the deployment was `broken` was ignored (`run.started mode=broken`);
+  flipping the DEPLOYMENT env to `attenuated` made the same request refuse with
+  `not_implemented`. Reverted to `broken`.
+- `npm run typecheck`, `npm test` (9 passed), `npm run check:boundary` — green.
+  `npx convex dev --once` — pushed, exit 0.
+
+### Notes
+
+- The requester's ceiling is represented by a principal holding exactly the
+  Requester role's scopes (`procurement:read, quotes:request`) — the sourcing M2M
+  app — so the repro is one deterministic command with no human login. The
+  essential property (root authority cannot approve any purchase) holds.
+- The component HMAC delegation still only carries the runId (its scopes are
+  capped at the issuing agent's grant, so it cannot represent an over-provisioned
+  chain). The effective (broken) scope chain is the app's `delegations` table,
+  which is exactly what P6's attenuated mode will enforce against.
+- `AUTHZ_MODE=broken` is set on the dev deployment (env only, not the repo).

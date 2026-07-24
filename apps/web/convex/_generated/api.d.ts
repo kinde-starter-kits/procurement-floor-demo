@@ -9,7 +9,10 @@
  */
 
 import type * as agents from "../agents.js";
+import type * as authz from "../authz.js";
+import type * as delegations from "../delegations.js";
 import type * as events from "../events.js";
+import type * as handoffs from "../handoffs.js";
 import type * as http from "../http.js";
 import type * as negotiationRounds from "../negotiationRounds.js";
 import type * as orders from "../orders.js";
@@ -25,7 +28,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agents: typeof agents;
+  authz: typeof authz;
+  delegations: typeof delegations;
   events: typeof events;
+  handoffs: typeof handoffs;
   http: typeof http;
   negotiationRounds: typeof negotiationRounds;
   orders: typeof orders;

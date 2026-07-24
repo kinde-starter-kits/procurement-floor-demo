@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "seed": "tsx scripts/seed-suppliers.ts"
+    "seed": "tsx scripts/seed-suppliers.ts",
+    "repro": "tsx scripts/repro-escalation.ts"
   },
   "dependencies": {
     "@kinde-oss/kinde-auth-nextjs": "^2.13.0",
