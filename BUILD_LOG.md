@@ -191,3 +191,63 @@ This phase establishes identity only. Nothing enforces authority yet.
   `apps/web/.env.local`. (The Convex deployment keeps its own `KINDE_AUDIENCE`
   for M2M token verification.) If a future need requires audience-bound human
   tokens, whitelist the Web app for the API in the Kinde dashboard instead.
+
+## P3 — Qdrant supplier search
+
+Semantic supplier search: a buyer's plain-language requisition is matched against
+supplier capability text.
+
+### What was built
+
+- **Qdrant** (`apps/web/lib/qdrant.ts`) — a single `suppliers` collection (384-d,
+  cosine) with `orgCode` as an indexed payload key. Never one collection per org.
+  The client is built from `QDRANT_URL` + `QDRANT_API_KEY` only, so local Docker →
+  Qdrant Cloud is a two-value change with no code change (api key optional for a
+  bare local instance).
+- **Embeddings** (`apps/web/lib/embeddings.ts`) — Transformers.js
+  `Xenova/all-MiniLM-L6-v2`, 384-d, normalized. Runs in the Node app layer only;
+  no embedding code in Convex (ONNX can't run there).
+- **Search route** (`apps/web/app/api/suppliers/search/route.ts`, `runtime =
+  'nodejs'`) — (1) verifies the caller's agent token via the component's
+  `POST /agent/verify` (mounted in `convex/http.ts`), (2) takes `orgCode` from the
+  verified token, never the body, (3) embeds the query, (4) searches Qdrant with
+  the org filter always applied. A caller can't reach another org's suppliers
+  because it never names the org.
+- **Seed** (`apps/web/scripts/seed-suppliers.ts` + `supplier-data.ts`) — two orgs,
+  13 realistic suppliers each (fabrication, logistics/cold-chain, industrial
+  chemicals, IT hardware, facilities, professional services, etc.) with regions
+  and certifications. One script writes Convex (via `suppliers.seedReplaceOrg`,
+  which returns the ids) and Qdrant, so the two stores can't drift.
+- **Tests** (`apps/web/lib/supplier-search.integration.test.ts`) — self-contained
+  against a bare local Qdrant (fresh collection, torn down after).
+
+### What was verified (STOP gate)
+
+- **Seed** populated both orgs in both stores and reported agreement: Qdrant 26
+  points; Convex 13 + 13.
+- **Real free-text search** through the route with a live sourcing-agent token:
+  query "…move temperature-sensitive vaccine shipments and keep them cold in
+  transit." → ranked, scored results, top hit **Polar Route Freight Systems**
+  (0.3578) — a cold-chain vendor whose text contains none of "vaccine/cold/move",
+  so a keyword filter would have missed it.
+- **Cross-org isolation** (integration test, local Qdrant): an Org X search never
+  returns Org Y's near-identical cold-chain vendor even though it's the strong
+  global match; every result carries `orgCode === ORG_X`. Plus a semantic test
+  asserting the free-text match is unreachable by keyword. Both pass.
+- `npm run typecheck`, `npm test` (2 tenancy tests), `npm run check:boundary` —
+  green. `npx convex dev --once` — pushed, exit 0.
+
+### Decisions
+
+- **Integration tests are separated from `npm test`.** The default suite stays
+  edge-runtime/CI-safe; Qdrant+ONNX tests live in `*.integration.test.ts` and run
+  via `npm run test:integration` (a second vitest config, Node runtime, long
+  timeout). CI has no Docker Qdrant or model, so they must not be in the default run.
+- **Org B is synthetic.** Org A is the real Kinde org (`org_d26a1b1345f3d`) the M2M
+  agents belong to, so an agent search resolves to its suppliers. Org B
+  (`org_7c4a9e2f1b60`) exists only to prove isolation.
+- **`suppliers.seedReplaceOrg` is a public mutation** so the Node seed script can
+  call it via `ConvexHttpClient` (internal functions aren't client-callable). It is
+  a dev/demo seed entry point on a dev deployment.
+- Local Qdrant runs in Docker as container `qdrant-p3` (`docker rm -f qdrant-p3`
+  to remove). Deployed demo would set `QDRANT_URL`/`QDRANT_API_KEY` to Qdrant Cloud.
