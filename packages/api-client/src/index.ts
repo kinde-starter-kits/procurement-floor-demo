@@ -51,11 +51,19 @@ export interface PlaceOrderInput {
   correlationId: string;
 }
 
+export interface HandoffResult {
+  hop: number;
+  scopes: string[];
+  added: string[];
+}
+
 export interface FloorClient {
   searchSuppliers(query: string, limit?: number): Promise<SupplierMatch[]>;
   createQuote(input: CreateQuoteInput): Promise<{quoteId: string}>;
   recordNegotiationRound(input: NegotiationRoundInput): Promise<void>;
   placeOrder(input: PlaceOrderInput): Promise<{orderId: string}>;
+  /** Mint the next hop's delegation at a handoff. */
+  handoff(input: {toStep: 'negotiation' | 'ordering'; amountCents?: number}): Promise<HandoffResult>;
   /** Append a runEvents row. org/run come from the verified credentials. */
   writeEvent(kind: string, payload: Record<string, unknown>): Promise<{seq: number}>;
 }
@@ -117,6 +125,9 @@ export function createFloorClient(opts: CreateFloorClientOptions): FloorClient {
     },
     placeOrder(input) {
       return post<{orderId: string}>('/api/orders', input);
+    },
+    handoff(input) {
+      return post<HandoffResult>('/api/handoff', input);
     },
     writeEvent(kind, payload) {
       return post<{seq: number}>('/api/events', {kind, payload});
