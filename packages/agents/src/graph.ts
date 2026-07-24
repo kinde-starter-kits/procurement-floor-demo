@@ -57,6 +57,7 @@ function roundAmount(budgetCents: number, factor: number, round: number): number
 
 async function sourcingNode(state: typeof State.State) {
   const {client, subject} = await openSession('sourcing', state.delegation, state.baseUrl);
+  await client.beginHop({step: 'sourcing'});
   await client.writeEvent('sourcing.searching', {query: state.requisition.description});
 
   const matches = await client.searchSuppliers(state.requisition.description, 5);
@@ -64,14 +65,10 @@ async function sourcingNode(state: typeof State.State) {
   await client.writeEvent('sourcing.shortlisted', {
     suppliers: shortlist.map((s) => ({name: s.name, supplierId: s.supplierId, score: s.score}))
   });
-
-  // Handoff: mint the negotiation hop of the delegation chain.
-  const grant = await client.handoff({toStep: 'negotiation'});
   await client.writeEvent('handoff', {
     from: 'sourcing',
     to: 'negotiation',
-    shortlist: shortlist.map((s) => s.name),
-    grantedScopes: grant.scopes
+    shortlist: shortlist.map((s) => s.name)
   });
 
   return {shortlist, subjects: {sourcing: subject}};
@@ -79,6 +76,7 @@ async function sourcingNode(state: typeof State.State) {
 
 async function negotiationNode(state: typeof State.State) {
   const {client, subject} = await openSession('negotiation', state.delegation, state.baseUrl);
+  await client.beginHop({step: 'negotiation'});
   const {requisitionId, budgetCents} = state.requisition;
 
   // Round 1: request an initial quote from each shortlisted supplier.
@@ -146,14 +144,10 @@ async function negotiationNode(state: typeof State.State) {
     winner: {name: winner.name, amountCents: winner.amountCents, quoteId: winner.quoteId}
   });
 
-  // Handoff: mint the ordering hop. Its scope (orders:place:tN) is derived from
-  // the winning amount — this is where broken mode over-provisions authority.
-  const grant = await client.handoff({toStep: 'ordering', amountCents: winner.amountCents});
   await client.writeEvent('handoff', {
     from: 'negotiation',
     to: 'ordering',
-    winner: winner.name,
-    grantedScopes: grant.scopes
+    winner: winner.name
   });
 
   return {quotes, winner, subjects: {negotiation: subject}};
@@ -164,23 +158,36 @@ async function orderingNode(state: typeof State.State) {
   const winner = state.winner;
   if (!winner) throw new Error('ordering: no winner to place');
 
-  const {orderId} = await client.placeOrder({
+  // Mint the ordering hop (starts the component instance in attenuated mode).
+  const grant = await client.beginHop({step: 'ordering', amountCents: winner.amountCents});
+
+  const result = await client.placeOrder({
     requisitionId: state.requisition.requisitionId,
     quoteId: winner.quoteId,
     amountCents: winner.amountCents,
-    placedByAgent: 'ordering',
-    status: 'placed',
-    correlationId: state.runId
+    correlationId: state.runId,
+    instanceId: grant.instanceId ?? undefined
   });
+
+  // A denial is a clean outcome — record it and terminate, do not crash.
+  if (result.denied) {
+    await client.writeEvent('run.terminated', {
+      reason: result.reason,
+      requiredScopes: result.requiredScopes,
+      correlationId: result.correlationId
+    });
+    return {order: null, subjects: {ordering: subject}};
+  }
+
   await client.writeEvent('ordering.order_placed', {
-    orderId,
+    orderId: result.orderId,
     supplier: winner.name,
     amountCents: winner.amountCents
   });
-  await client.writeEvent('run.completed', {orderId});
+  await client.writeEvent('run.completed', {orderId: result.orderId});
 
   return {
-    order: {orderId, supplier: winner.name, amountCents: winner.amountCents},
+    order: {orderId: result.orderId, supplier: winner.name, amountCents: winner.amountCents},
     subjects: {ordering: subject}
   };
 }

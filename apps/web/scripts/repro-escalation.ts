@@ -52,11 +52,11 @@ async function main() {
   console.log(`Run started: ${started.runId}\n`);
 
   const convex = new ConvexHttpClient(CONVEX);
+  const TERMINAL = ['run.completed', 'run.terminated'];
   let events: Array<{seq: number; kind: string; payload: Record<string, unknown>}> = [];
   for (let i = 0; i < 60; i++) {
     events = (await convex.query(api.events.listByRun, {orgCode: ORG, runId: started.runId})) as never;
-    if (events.some((e) => e.kind === 'run.completed')) break;
-    if (events.some((e) => (e.payload as {error?: unknown})?.error)) break;
+    if (events.some((e) => TERMINAL.includes(e.kind))) break;
     await sleep(2000);
   }
 
@@ -65,19 +65,23 @@ async function main() {
     runId: started.runId
   })) as Array<{hop: number; subject: string; scopes: string[]}>;
 
-  const requesterScopes =
-    (events.find((e) => e.kind === 'run.started')?.payload.requesterScopes as string[]) ?? [];
+  const startedEvent = events.find((e) => e.kind === 'run.started');
+  const mode = (startedEvent?.payload.mode as string) ?? 'unknown';
+  const requesterScopes = (startedEvent?.payload.requesterScopes as string[]) ?? [];
   const orderEvent = events.find((e) => e.kind === 'ordering.order_placed');
+  const deniedEvent = events.find((e) => e.kind === 'order.denied');
 
-  console.log('Requester ceiling (the person who asked):');
-  console.log('  ' + requesterScopes.join(', ') + '   ← cannot place any order\n');
+  console.log(`Mode: ${mode}`);
+  console.log('Requester ceiling (the Buyer who asked):');
+  console.log('  ' + requesterScopes.join(', ') + '   ← may approve t1, but NOT t2\n');
 
-  console.log('Delegation chain (broken mode — grows as it travels):');
+  const verb = mode === 'attenuated' ? 'intersected — only shrinks' : 'grows as it travels';
+  console.log(`Delegation chain (${mode} mode — ${verb}):`);
   for (const d of delegations) {
-    const grew = d.scopes.filter((s) => !requesterScopes.includes(s));
+    const beyond = d.scopes.filter((s) => !requesterScopes.includes(s));
     console.log(
       `  hop ${d.hop}  ${d.subject.padEnd(12)} [${d.scopes.join(', ')}]` +
-        (grew.length ? `   +${grew.join(', ')}` : '')
+        (beyond.length ? `   ⚠ +${beyond.join(', ')} (beyond the requester)` : '')
     );
   }
 
@@ -85,10 +89,18 @@ async function main() {
     const p = orderEvent.payload as {supplier: string; amountCents: number};
     console.log(
       `\nORDER PLACED: ${p.supplier} @ ${dollars(p.amountCents)} — a tier-2 purchase, ` +
-        `authorized by a requester who holds none of orders:place:*.`
+        `beyond the Buyer's t1 ceiling. (broken mode let authority grow to fit the task)`
+    );
+  } else if (deniedEvent) {
+    const p = deniedEvent.payload as {reason: string; requiredScopes: string[]; correlationId: string};
+    console.log(
+      `\nORDER DENIED at hop 3: ${p.reason}\n` +
+        `  requiredScopes: ${JSON.stringify(p.requiredScopes)}\n` +
+        `  correlationId:  ${p.correlationId}\n` +
+        `No order row was created. The chain never granted more than the Buyer's t1.`
     );
   } else {
-    console.log('\nNo order was placed (see events).');
+    console.log('\nNo terminal order outcome found (see events).');
   }
 }
 

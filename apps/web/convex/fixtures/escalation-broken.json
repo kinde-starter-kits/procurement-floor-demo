@@ -1,0 +1,42 @@
+{
+  "mode": "broken",
+  "requesterScopes": [
+    "procurement:read",
+    "quotes:request",
+    "quotes:negotiate",
+    "orders:place:t1"
+  ],
+  "chain": [
+    {
+      "hop": 1,
+      "subject": "sourcing",
+      "scopes": [
+        "procurement:read",
+        "quotes:request"
+      ]
+    },
+    {
+      "hop": 2,
+      "subject": "negotiation",
+      "scopes": [
+        "procurement:read",
+        "quotes:request",
+        "quotes:negotiate"
+      ]
+    },
+    {
+      "hop": 3,
+      "subject": "ordering",
+      "scopes": [
+        "procurement:read",
+        "quotes:request",
+        "quotes:negotiate",
+        "orders:place:t2"
+      ]
+    }
+  ],
+  "order": {
+    "amountCents": 14200000
+  },
+  "denial": null
+}
