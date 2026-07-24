@@ -1,17 +1,25 @@
-import {ConvexError} from 'convex/values';
-
 export type AuthzMode = 'broken' | 'attenuated';
+export type Step = 'sourcing' | 'negotiation' | 'ordering';
 
 /**
  * The authorization mode, read ONLY from the deployment environment. Nothing a
  * request can influence — no header, body, or query param — ever reaches this.
- * Defaults to `broken` for this phase. `attenuated` lands in P6.
  */
 export function authzMode(): AuthzMode {
   return process.env.AUTHZ_MODE === 'attenuated' ? 'attenuated' : 'broken';
 }
 
-// Order-value tiers. $142,000 lands in t2.
+// The human requester at the root of every chain. A Buyer: may approve tier-1
+// purchases, but nothing higher. Everything downstream must be a subset of this.
+export const REQUESTER_SUBJECT = 'human:buyer-requester';
+export const REQUESTER_SCOPES = [
+  'procurement:read',
+  'quotes:request',
+  'quotes:negotiate',
+  'orders:place:t1'
+];
+
+// Order-value tiers. $142,000 lands in t2 (above the Buyer's t1 ceiling).
 //   t1: <= $50,000   t2: <= $250,000   t3: above
 export function orderTier(amountCents: bigint | number): 't1' | 't2' | 't3' {
   const cents = typeof amountCents === 'bigint' ? amountCents : BigInt(Math.round(amountCents));
@@ -20,9 +28,7 @@ export function orderTier(amountCents: bigint | number): 't1' | 't2' | 't3' {
   return 't3';
 }
 
-export type Step = 'sourcing' | 'negotiation' | 'ordering';
-
-/** The scopes a step needs to do its work in front of it. */
+/** The scopes a step needs to do the work in front of it (broken mode). */
 export function stepNeeds(step: Step, amountCents?: bigint | number): string[] {
   switch (step) {
     case 'sourcing':
@@ -34,21 +40,25 @@ export function stepNeeds(step: Step, amountCents?: bigint | number): string[] {
   }
 }
 
+export function intersect(a: readonly string[], b: readonly string[]): string[] {
+  const bset = new Set(b);
+  return [...new Set(a)].filter((s) => bset.has(s)).sort();
+}
+
 /**
- * The scope set the next hop carries.
- *
- * BROKEN: authority is provisioned to fit the task — the parent's scopes PLUS
- * whatever the next step needs, with no intersection against the person who
- * asked. So the chain grows as it travels; a step can end up holding a scope the
- * original requester never had. This is the bug.
- *
- * ATTENUATED: not implemented until P6 (it will intersect, never grow).
+ * BROKEN: authority is provisioned to fit the task — parent ∪ next-step needs,
+ * with no intersection against the requester. The chain grows as it travels.
  */
-export function nextScopes(mode: AuthzMode, parentScopes: string[], need: string[]): string[] {
-  if (mode === 'attenuated') {
-    throw new ConvexError({code: 'not_implemented', message: 'attenuated mode lands in P6'});
-  }
-  const grown = new Set(parentScopes);
-  for (const s of need) grown.add(s);
-  return [...grown];
+export function brokenNextScopes(parentScopes: string[], need: string[]): string[] {
+  return [...new Set([...parentScopes, ...need])];
+}
+
+/**
+ * ATTENUATED: a hop carries only the intersection of the requester's ceiling and
+ * what the acting agent itself holds (its token scopes). Authority only shrinks.
+ * The component enforces the agent half at issue time; this pins the requester
+ * half.
+ */
+export function attenuatedHopScopes(callerScopes: string[]): string[] {
+  return intersect(REQUESTER_SCOPES, callerScopes);
 }

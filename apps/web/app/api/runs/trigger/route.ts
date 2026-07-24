@@ -32,8 +32,6 @@ export async function POST(req: Request) {
       subject: agent.subject,
       agentId: agent.agentId,
       runId,
-      // The requester's ceiling — their own scopes from the verified token.
-      requesterScopes: agent.scopes,
       title,
       description,
       budgetCents

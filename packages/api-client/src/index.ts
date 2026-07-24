@@ -46,24 +46,33 @@ export interface PlaceOrderInput {
   requisitionId: string;
   quoteId: string;
   amountCents: number;
-  placedByAgent: string;
-  status: string;
   correlationId: string;
+  /** The component instance to authorize against (attenuated mode). */
+  instanceId?: string;
 }
 
-export interface HandoffResult {
+export type PlaceOrderResult =
+  | {denied: false; orderId: string}
+  | {denied: true; reason: string; requiredScopes: string[]; correlationId: string};
+
+export interface BeginHopResult {
   hop: number;
   scopes: string[];
-  added: string[];
+  /** The component instance id (attenuated ordering hop), else null. */
+  instanceId: string | null;
 }
 
 export interface FloorClient {
   searchSuppliers(query: string, limit?: number): Promise<SupplierMatch[]>;
   createQuote(input: CreateQuoteInput): Promise<{quoteId: string}>;
   recordNegotiationRound(input: NegotiationRoundInput): Promise<void>;
-  placeOrder(input: PlaceOrderInput): Promise<{orderId: string}>;
-  /** Mint the next hop's delegation at a handoff. */
-  handoff(input: {toStep: 'negotiation' | 'ordering'; amountCents?: number}): Promise<HandoffResult>;
+  /** Submit an order. May be denied (attenuated mode) — a normal outcome. */
+  placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult>;
+  /** Mint this node's hop of the delegation chain at the start of its work. */
+  beginHop(input: {
+    step: 'sourcing' | 'negotiation' | 'ordering';
+    amountCents?: number;
+  }): Promise<BeginHopResult>;
   /** Append a runEvents row. org/run come from the verified credentials. */
   writeEvent(kind: string, payload: Record<string, unknown>): Promise<{seq: number}>;
 }
@@ -124,10 +133,10 @@ export function createFloorClient(opts: CreateFloorClientOptions): FloorClient {
       await post<unknown>('/api/negotiation-rounds', input);
     },
     placeOrder(input) {
-      return post<{orderId: string}>('/api/orders', input);
+      return post<PlaceOrderResult>('/api/orders', input);
     },
-    handoff(input) {
-      return post<HandoffResult>('/api/handoff', input);
+    beginHop(input) {
+      return post<BeginHopResult>('/api/hop', input);
     },
     writeEvent(kind, payload) {
       return post<{seq: number}>('/api/events', {kind, payload});

@@ -1,44 +1,49 @@
 import {describe, expect, test} from 'vitest';
-import manifest from './fixtures/escalation.json';
+import broken from './fixtures/escalation-broken.json';
+import attenuated from './fixtures/escalation-attenuated.json';
 
 /**
- * Broken mode lets authority escalate: a run started by a Requester (who holds
- * only `procurement:read` and `quotes:request`, and cannot approve any purchase)
- * ends in a placed order well above that ceiling, because each handoff mints the
- * next hop's scopes to fit the task instead of inheriting from the requester.
- *
- * The fixture is captured verbatim from the deterministic repro run. In P6 this
- * SAME assertion flips: attenuated mode must deny the order.
+ * Same seed, same requisition, same $142,000 winning quote — only AUTHZ_MODE
+ * differs. The requester is a Buyer: may approve tier-1 purchases, nothing
+ * higher. Both fixtures are captured verbatim from the repro run in each mode.
  */
-describe('broken-mode escalation', () => {
-  const requester = manifest.requesterScopes;
-  const finalHop = manifest.chain.at(-1)!;
+const isT2Plus = (s: string) => s === 'orders:place:t2' || s === 'orders:place:t3';
 
-  test('the run is in broken mode', () => {
-    expect(manifest.mode).toBe('broken');
+describe('authority escalation vs attenuation ($142,000 tier-2 order)', () => {
+  test('the requester (Buyer) may approve t1 but not t2', () => {
+    for (const fx of [broken, attenuated]) {
+      expect(fx.requesterScopes).toContain('orders:place:t1');
+      expect(fx.requesterScopes.some(isT2Plus)).toBe(false);
+    }
   });
 
-  test('the requester cannot place an order of any size', () => {
-    expect(requester).toContain('procurement:read');
-    expect(requester).toContain('quotes:request');
-    expect(requester.some((s) => s.startsWith('orders:place:'))).toBe(false);
-  });
-
-  test('the delegation chain grows as it travels', () => {
-    const [h1, h2, h3] = manifest.chain;
-    expect(h1.scopes.length).toBeLessThan(h2.scopes.length);
-    expect(h2.scopes.length).toBeLessThan(h3.scopes.length);
-    // every parent scope is carried forward, plus new ones
-    for (const s of h1.scopes) expect(h2.scopes).toContain(s);
-    for (const s of h2.scopes) expect(h3.scopes).toContain(s);
-  });
-
-  test('escalation SUCCEEDS: a $142,000 tier-2 order is placed above the requester ceiling', () => {
-    // authority the requester never held, minted for the ordering hop
+  test('BROKEN: the chain grows past the requester and the order is placed', () => {
+    const finalHop = broken.chain.at(-1)!;
+    // authority the requester never held, minted to fit the task
     expect(finalHop.scopes).toContain('orders:place:t2');
-    expect(requester).not.toContain('orders:place:t2');
+    expect(broken.requesterScopes).not.toContain('orders:place:t2');
+    // order placed at $142,000
+    expect(broken.order).not.toBeNull();
+    expect(broken.order!.amountCents).toBe(14_200_000);
+    expect(broken.denial).toBeNull();
+  });
 
-    expect(manifest.order).not.toBeNull();
-    expect(manifest.order!.amountCents).toBe(14_200_000); // $142,000
+  test('ATTENUATED: the chain only shrinks and the order is DENIED', () => {
+    // every hop is a subset of the requester's ceiling — authority never grows
+    for (const hop of attenuated.chain) {
+      for (const s of hop.scopes) expect(attenuated.requesterScopes).toContain(s);
+      expect(hop.scopes.some(isT2Plus)).toBe(false);
+    }
+    // hop three carries orders:place:t1 at most
+    const finalHop = attenuated.chain.at(-1)!;
+    expect(finalHop.scopes).toContain('orders:place:t1');
+    expect(finalHop.scopes).not.toContain('orders:place:t2');
+
+    // no order row; a denial naming the missing tier
+    expect(attenuated.order).toBeNull();
+    expect(attenuated.denial).not.toBeNull();
+    expect(attenuated.denial!.reason).toBe('insufficient_scope');
+    expect(attenuated.denial!.requiredScopes).toEqual(['orders:place:t2']);
+    expect(attenuated.denial!.correlationId).toBeTruthy();
   });
 });

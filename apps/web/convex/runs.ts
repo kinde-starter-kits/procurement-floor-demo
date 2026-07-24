@@ -1,16 +1,12 @@
 import {v} from 'convex/values';
 import {mutation, query} from './_generated/server';
 import {components} from './_generated/api';
-import {authzMode, nextScopes, stepNeeds} from './authz';
+import {authzMode, REQUESTER_SCOPES, REQUESTER_SUBJECT} from './authz';
 
 /**
- * Start a run. Creates the requisition, records the requester's ceiling, mints
- * the run's runId-carrying component delegation, and records hop 1 (sourcing) of
- * the delegation chain with its EFFECTIVE scopes.
- *
- * The delegation chain of record lives in the `delegations` table: every hop
- * stores the effective scopes it carries, so the chain (and, in broken mode, its
- * growth) can be read back afterwards.
+ * Start a run. Creates the requisition, records the requester's ceiling (the
+ * root of every delegation chain), and mints the runId-carrying component
+ * delegation. Each node mints its own hop of the chain (see hop.begin).
  */
 export const start = mutation({
   args: {
@@ -18,8 +14,6 @@ export const start = mutation({
     subject: v.string(),
     agentId: v.string(),
     runId: v.string(),
-    // The requester's own scopes (from their verified token) — their ceiling.
-    requesterScopes: v.array(v.string()),
     title: v.string(),
     description: v.string(),
     budgetCents: v.number()
@@ -32,12 +26,10 @@ export const start = mutation({
       title: args.title,
       description: args.description,
       budgetCents: BigInt(Math.round(args.budgetCents)),
-      requestedBySubject: args.subject,
+      requestedBySubject: REQUESTER_SUBJECT,
       status: 'sourcing'
     });
 
-    // runId-carrying delegation (transport). The scope chain of record is the
-    // `delegations` table below, which is not capped by the component.
     const delegationId: string = await ctx.runMutation(
       components.agentAuth.delegations.issue,
       {
@@ -50,41 +42,23 @@ export const start = mutation({
       }
     );
 
-    // Hop 1 (sourcing): broken mode provisions the sourcing task's needs.
-    const hop1Scopes = nextScopes(mode, [], stepNeeds('sourcing'));
-    await ctx.db.insert('delegations', {
-      orgCode: args.orgCode,
-      runId: args.runId,
-      hop: 1,
-      subject: 'sourcing',
-      scopes: hop1Scopes,
-      issuedAt: Date.now()
-    });
-
     await ctx.db.insert('runEvents', {
       orgCode: args.orgCode,
       runId: args.runId,
       seq: 0,
       kind: 'run.started',
       payload: {
-        subject: args.subject,
+        subject: REQUESTER_SUBJECT,
         requisitionId,
         title: args.title,
         mode,
-        requesterScopes: args.requesterScopes
+        // The human requester's ceiling — a Buyer, capped at tier 1.
+        requesterScopes: REQUESTER_SCOPES
       },
       at: Date.now()
     });
-    await ctx.db.insert('runEvents', {
-      orgCode: args.orgCode,
-      runId: args.runId,
-      seq: 1,
-      kind: 'delegation.minted',
-      payload: {hop: 1, step: 'sourcing', scopes: hop1Scopes, added: hop1Scopes, mode},
-      at: Date.now()
-    });
 
-    return {requisitionId, delegationId, hop1Scopes};
+    return {requisitionId, delegationId};
   }
 });
 

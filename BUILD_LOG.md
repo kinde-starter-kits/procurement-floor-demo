@@ -373,3 +373,61 @@ person who asked. The chain grows as it travels. Builds `broken` only.
   chain). The effective (broken) scope chain is the app's `delegations` table,
   which is exactly what P6's attenuated mode will enforce against.
 - `AUTHZ_MODE=broken` is set on the dev deployment (env only, not the repo).
+
+## P6 — Attenuated mode
+
+The fix for P5's escalation. `AUTHZ_MODE=attenuated`: authority only ever shrinks,
+enforced by the component's own delegation + `authz.can` machinery.
+
+### What was built
+
+- **Attenuated chain** (`convex/authz.ts`, `convex/hop.ts`): each node mints its
+  own hop with `intersect(REQUESTER_SCOPES, agent scopes)` — never more than the
+  requester (a Buyer, capped at tier 1) holds and never more than the agent holds.
+  The hop is issued through the COMPONENT's `delegations.issue` (rooted at the
+  human requester, `issuerKind:'user'`); the component refuses any scope the agent
+  does not itself hold. The ordering hop also starts a component `instance`.
+- **Enforcement at the order** (`convex/orders.ts` `submit` action, mode read from
+  the deployment env): in attenuated mode it calls the component's `authorize`
+  (`verifyCaller` + `authz.can`) for `orders:place:t{tier}` before placing. The
+  ordering agent's effective scopes — `agent.scopes ∩ delegation.scopes ∩
+  tokenScopes` — cap at `orders:place:t1`, so a t2 order is refused with
+  `insufficient_scope`. The graph reads the denial and terminates cleanly.
+- Per-node hop minting replaced P5's handoff-mints-next (`/api/handoff` →
+  `/api/hop`), so each node's own agentId is available to root its component
+  delegation. Broken mode still grows (both modes share the same seed/graph).
+
+### What was verified (STOP gate)
+
+- **Same repro command, attenuated mode → denied at hop 3** (`npm run repro`):
+  requester (Buyer) `procurement:read, quotes:request, quotes:negotiate,
+  orders:place:t1`; chain shrinks — hop1 `[read, request]`, hop2 `[read,
+  negotiate]`, hop3 `[read, orders:place:t1]`; the $142,000 (t2) order is DENIED,
+  `insufficient_scope`, `requiredScopes: ["orders:place:t2"]`, with a correlationId.
+- **runEvents for the denied run** read start to finish: scopes shrinking per hop
+  (`delegation.minted` seq 1/5/11), then `order.denied` (seq 12) with the reason +
+  requiredScopes + correlationId, then `run.terminated` — no crash.
+- **No order row** was created (`npx convex data orders` → 0 rows for the runId).
+- **Component's real delegation chain**: the ordering agent's component delegation
+  is `issuerSubject: human:buyer-requester`, `scopes: [orders:place:t1,
+  procurement:read]` — the intersection, `orders:place:t2` never mintable. The
+  component **audit trail** records the `authz.decision` deny:
+  `effectiveScopes:[orders:place:t1, procurement:read]`, `action:orders:place:t2`,
+  `reason:insufficient_scope`.
+- **Both modes tested, same seed** (`convex/escalation.test.ts`): BROKEN → chain
+  grows past the requester, $142,000 order placed; ATTENUATED → chain only shrinks,
+  no order, denial naming `orders:place:t2`. Fixtures captured verbatim from each run.
+- `npm run typecheck`, `npm test` (8 passed), `npm run check:boundary` — green.
+  `npx convex dev --once` — pushed, exit 0.
+
+### Notes
+
+- The requester is represented as a **Buyer** (holds `orders:place:t1`, not t2) —
+  the scenario where attenuation's nuance shows: a t1 holder blocked from a t2
+  purchase, `requiredScopes` naming exactly the missing tier. (P5's requester held
+  no `orders:place`; P6 raises the ceiling to t1 so hop 3 visibly carries t1.)
+- The intersection is done by the component (`scopes_exceed_agent` at issue,
+  `intersectScopes` in `authz.can`) — the app pins only the requester half and lets
+  the component do the rest, exactly as intended.
+- `AUTHZ_MODE=attenuated` is the deployment's resting state (the fix is active);
+  flip the env to `broken` to see the escalation again. Mode is env-only.
