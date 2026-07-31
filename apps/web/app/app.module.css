@@ -1,0 +1,518 @@
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 24px 80px;
+}
+
+/* ---- header ------------------------------------------------------------- */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.brandRow {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.brandMark {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  color: var(--accent);
+  border: 1px solid var(--accent-deep);
+  border-radius: 2px;
+  padding: 4px 8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.brand {
+  font-size: 30px;
+  line-height: 1.05;
+}
+.tagline {
+  color: var(--text-dim);
+  margin: 8px 0 0;
+  max-width: 52ch;
+}
+
+/* mode badge — read from the server */
+.modeBadge {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  min-width: 220px;
+  background: var(--ink-raised);
+}
+.modeTop {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.modeDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px color-mix(in oklab, currentColor 20%, transparent);
+}
+.modeLabel {
+  font-family: var(--font-display);
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+.modeAttenuated {
+  color: var(--ok);
+}
+.modeBroken {
+  color: var(--bad);
+}
+.modeNote {
+  color: var(--text-faint);
+  font-size: 12px;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+}
+
+/* ---- layout ------------------------------------------------------------- */
+.grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 28px;
+  margin-top: 28px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  background: var(--ink-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 20px;
+}
+.panelTitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 0 0 14px;
+}
+
+/* ---- role switch -------------------------------------------------------- */
+.roles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.role {
+  text-align: left;
+  background: var(--ink-sunk);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 11px 13px;
+  color: var(--text);
+  transition: border-color 0.15s, background 0.15s;
+}
+.role:hover {
+  border-color: var(--accent-deep);
+}
+.roleActive {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, var(--ink-sunk));
+}
+.roleName {
+  font-family: var(--font-display);
+  font-size: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.roleCeil {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+}
+.roleCan {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  margin-top: 3px;
+}
+.kindeLink {
+  display: block;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  text-decoration: none;
+}
+.kindeLink u {
+  color: var(--text-dim);
+}
+
+/* ---- run setup ---------------------------------------------------------- */
+.presets {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+.preset {
+  text-align: left;
+  background: var(--ink-sunk);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+.preset:hover {
+  border-color: var(--accent-deep);
+}
+.presetActive {
+  border-color: var(--accent);
+}
+.presetName {
+  font-size: 13px;
+}
+.presetBudget {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.field {
+  margin-bottom: 12px;
+}
+.label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+.input,
+.textarea {
+  width: 100%;
+  background: var(--ink-sunk);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 14px;
+}
+.textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+.byok {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  margin-bottom: 14px;
+}
+.byokSummary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 10px 0;
+  cursor: pointer;
+}
+.byokBody {
+  padding-bottom: 12px;
+}
+.byokNote {
+  color: var(--text-faint);
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+.startBtn {
+  width: 100%;
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 12px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+.startBtn:hover {
+  background: color-mix(in oklab, var(--accent) 88%, white);
+}
+.startBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.hint {
+  color: var(--text-faint);
+  font-size: 12px;
+  margin: 10px 0 0;
+  text-align: center;
+}
+
+/* ---- failure banner ----------------------------------------------------- */
+.failBanner {
+  border: 1px solid var(--bad);
+  background: var(--bad-deep);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 13.5px;
+}
+.failBanner strong {
+  color: var(--bad);
+}
+
+/* ---- the chain (centrepiece) ------------------------------------------- */
+.chain {
+  background: var(--ink-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 22px 6px;
+}
+.chainHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chainTitle {
+  font-size: 19px;
+}
+.chainSub {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 2px 0 22px;
+}
+.rail {
+  position: relative;
+  padding-left: 26px;
+}
+.hop {
+  position: relative;
+  padding-bottom: 20px;
+}
+/* Connector runs from each node's dot down to the next node's dot. The last node
+   has no connector below it, so the line spans node one to node N and stops. */
+.hop:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: 10px;
+  bottom: -10px;
+  width: 2px;
+  background: var(--line);
+  z-index: 0;
+}
+.hopDot {
+  position: absolute;
+  left: -26px;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink-raised);
+  border: 2px solid var(--accent);
+  z-index: 1;
+}
+.hopDotRoot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.hopDotHold {
+  border-color: var(--ok);
+}
+.hopDotLeak {
+  border-color: var(--bad);
+}
+.hopHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.hopStep {
+  font-family: var(--font-display);
+  font-size: 15px;
+  text-transform: capitalize;
+}
+.hopWho {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.hopCeil {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.scopeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.chip {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  background: var(--ink-sunk);
+}
+.chipOrder {
+  border-color: var(--accent-deep);
+  color: var(--accent);
+}
+.chipNew {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+/* verdict card on the ordering hop */
+.verdict {
+  margin-top: 12px;
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  border: 1px solid;
+}
+.verdictDenied {
+  border-color: var(--bad);
+  background: color-mix(in oklab, var(--bad) 12%, var(--ink-sunk));
+}
+.verdictApproved {
+  border-color: var(--ok);
+  background: color-mix(in oklab, var(--ok) 12%, var(--ink-sunk));
+}
+.verdictPending {
+  border-color: var(--line);
+  background: var(--ink-sunk);
+  color: var(--text-dim);
+}
+.verdictStamp {
+  font-family: var(--font-display);
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.stampDenied {
+  color: var(--bad);
+}
+.stampApproved {
+  color: var(--ok);
+}
+.verdictLine {
+  font-size: 13.5px;
+  margin-top: 6px;
+  color: var(--text);
+}
+.verdictLine b {
+  font-family: var(--font-mono);
+}
+.verdictMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 8px;
+}
+
+.emptyChain {
+  color: var(--text-faint);
+  font-size: 13.5px;
+  padding: 26px 0 34px;
+  text-align: center;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+/* ---- timeline ----------------------------------------------------------- */
+.timeline {
+  margin-top: 20px;
+  background: var(--ink-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+.tlList {
+  display: flex;
+  flex-direction: column;
+}
+.tlRow {
+  display: grid;
+  /* kind column sizes to the widest event kind (negotiation.quotes_requested),
+     so it never overflows into the description. */
+  grid-template-columns: 26px max-content 1fr;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-soft);
+  align-items: baseline;
+}
+.tlRow:first-child {
+  border-top: none;
+}
+.tlSeq {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.tlKind {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.tlKindDeny {
+  color: var(--bad);
+}
+.tlKindDone {
+  color: var(--ok);
+}
+.tlText {
+  font-size: 13.5px;
+  color: var(--text);
+}
+.tlText em {
+  color: var(--text-dim);
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.emptyTl {
+  color: var(--text-faint);
+  font-size: 13px;
+  padding: 8px 0;
+}
+@media (max-width: 560px) {
+  .tlRow {
+    grid-template-columns: 22px 1fr;
+  }
+  .tlKind {
+    grid-column: 2;
+  }
+  .tlText {
+    grid-column: 2;
+  }
+}

@@ -1,7 +1,7 @@
 import {NextResponse} from 'next/server';
 import type {Id} from '@/convex/_generated/dataModel';
 import {api} from '@/convex/_generated/api';
-import {convexClient, resolveRunId, toErrorResponse, verifyAgent} from '@/lib/agent-request';
+import {convexClient, resolveRunId, retry, toErrorResponse, verifyAgent} from '@/lib/agent-request';
 
 export const runtime = 'nodejs';
 
@@ -23,17 +23,19 @@ export async function POST(req: Request) {
     }
 
     // The MODE is decided inside Convex from the deployment env, not here.
-    const result = await convexClient().action(api.orders.submit, {
-      token,
-      orgCode: agent.orgCode,
-      runId,
-      subject: agent.subject,
-      requisitionId: body.requisitionId as Id<'requisitions'>,
-      quoteId: body.quoteId as Id<'quotes'>,
-      amountCents: body.amountCents,
-      instanceId: body.instanceId,
-      correlationId: body.correlationId ?? ''
-    });
+    const result = await retry(() =>
+      convexClient().action(api.orders.submit, {
+        token,
+        orgCode: agent.orgCode,
+        runId,
+        subject: agent.subject,
+        requisitionId: body.requisitionId as Id<'requisitions'>,
+        quoteId: body.quoteId as Id<'quotes'>,
+        amountCents: body.amountCents!,
+        instanceId: body.instanceId,
+        correlationId: body.correlationId ?? ''
+      })
+    );
 
     // A denial is a normal outcome (200), not an error — the run reads it and stops.
     return NextResponse.json(result);

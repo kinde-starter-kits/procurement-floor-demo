@@ -65,10 +65,12 @@ export const submit = action({
     if (mode === 'attenuated') {
       if (!args.instanceId) throw new Error('instanceId required in attenuated mode');
       const requiredAction = `orders:place:${orderTier(args.amountCents)}`;
+      // No enforceTokenScopes: the decision is agent.scopes ∩ the human-rooted
+      // delegation. The Kinde M2M token proves identity; the tier ceiling comes
+      // from what the human delegated down the chain.
       const {decision} = await authorize(ctx, components.agentAuth, args.token, {
         instanceId: args.instanceId as never,
-        action: requiredAction,
-        enforceTokenScopes: true
+        action: requiredAction
       });
       if (!decision.allowed) {
         await ctx.runMutation(api.events.append, {

@@ -4,6 +4,7 @@ import {
   AgentRequestError,
   convexClient,
   resolveRunId,
+  retry,
   toErrorResponse,
   verifyAgent
 } from '@/lib/agent-request';
@@ -23,15 +24,17 @@ export async function POST(req: Request) {
       return NextResponse.json({error: 'invalid_step'}, {status: 400});
     }
 
-    const result = await convexClient().mutation(api.hop.begin, {
-      orgCode: agent.orgCode,
-      runId,
-      step: body.step,
-      callerSubject: agent.subject,
-      callerAgentId: agent.agentId,
-      callerScopes: agent.scopes,
-      amountCents: typeof body.amountCents === 'number' ? body.amountCents : undefined
-    });
+    const result = await retry(() =>
+      convexClient().mutation(api.hop.begin, {
+        orgCode: agent.orgCode,
+        runId,
+        step: body.step as 'sourcing' | 'negotiation' | 'ordering',
+        callerSubject: agent.subject,
+        callerAgentId: agent.agentId!,
+        callerScopes: agent.scopes,
+        amountCents: typeof body.amountCents === 'number' ? body.amountCents : undefined
+      })
+    );
     return NextResponse.json(result);
   } catch (error) {
     return toErrorResponse(error);

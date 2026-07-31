@@ -1,7 +1,7 @@
 import {NextResponse} from 'next/server';
 import type {Id} from '@/convex/_generated/dataModel';
 import {api} from '@/convex/_generated/api';
-import {convexClient, toErrorResponse, verifyAgent} from '@/lib/agent-request';
+import {convexClient, retry, toErrorResponse, verifyAgent} from '@/lib/agent-request';
 
 export const runtime = 'nodejs';
 
@@ -18,13 +18,15 @@ export async function POST(req: Request) {
       return NextResponse.json({error: 'invalid_round'}, {status: 400});
     }
 
-    await convexClient().mutation(api.negotiationRounds.record, {
-      orgCode: agent.orgCode,
-      requisitionId: body.requisitionId as Id<'requisitions'>,
-      round: body.round,
-      summary: body.summary ?? '',
-      startedAt: body.startedAt ?? Date.now()
-    });
+    await retry(() =>
+      convexClient().mutation(api.negotiationRounds.record, {
+        orgCode: agent.orgCode,
+        requisitionId: body.requisitionId as Id<'requisitions'>,
+        round: body.round!,
+        summary: body.summary ?? '',
+        startedAt: body.startedAt ?? Date.now()
+      })
+    );
     return NextResponse.json({ok: true});
   } catch (error) {
     return toErrorResponse(error);

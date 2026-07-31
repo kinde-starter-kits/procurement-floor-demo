@@ -101,15 +101,29 @@ export function createFloorClient(opts: CreateFloorClientOptions): FloorClient {
   const baseUrl = required(opts.baseUrl, 'baseUrl').replace(/\/$/, '');
 
   async function post<T>(path: string, body: unknown): Promise<T> {
-    const res = await fetch(`${baseUrl}${path}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${agentToken}`,
-        'x-floor-delegation': delegation
-      },
-      body: JSON.stringify(body)
-    });
+    // Retry transient network failures (a dropped connection throws
+    // `TypeError: fetch failed`). A non-OK HTTP response is a real answer and is
+    // not retried — it surfaces as a FloorClientError.
+    let res: Response | undefined;
+    let lastError: unknown;
+    for (let i = 0; i < 4; i++) {
+      try {
+        res = await fetch(`${baseUrl}${path}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${agentToken}`,
+            'x-floor-delegation': delegation
+          },
+          body: JSON.stringify(body)
+        });
+        break;
+      } catch (err) {
+        lastError = err;
+        if (i < 3) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+      }
+    }
+    if (!res) throw new FloorClientError(0, path, {error: 'network_error', cause: String(lastError)});
     const text = await res.text();
     const data = text ? JSON.parse(text) : {};
     if (!res.ok) {

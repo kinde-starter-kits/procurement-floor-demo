@@ -37,6 +37,25 @@ export function convexClient(): ConvexHttpClient {
 }
 
 /**
+ * Retry a network operation on transient failure (a dropped connection throws
+ * `TypeError: fetch failed`). An AgentRequestError is a real answer and is not
+ * retried. Without this, a single blip on any app→Convex hop fails the whole run.
+ */
+export async function retry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof AgentRequestError) throw err;
+      lastError = err;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+    }
+  }
+  throw lastError;
+}
+
+/**
  * Verify the caller's bearer token through the component and return its org and
  * subject. Nothing here comes from the request body.
  */
@@ -48,7 +67,9 @@ export async function verifyAgent(req: Request): Promise<VerifiedAgent> {
   const site = process.env.NEXT_PUBLIC_CONVEX_SITE_URL;
   if (!site) throw new AgentRequestError(500, {error: 'server_misconfigured'});
 
-  const res = await fetch(`${site}/agent/verify`, {method: 'POST', headers: {authorization}});
+  const res = await retry(() =>
+    fetch(`${site}/agent/verify`, {method: 'POST', headers: {authorization}})
+  );
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new AgentRequestError(res.status, {error: 'token_verification_failed', detail});
@@ -65,9 +86,9 @@ export async function verifyAgent(req: Request): Promise<VerifiedAgent> {
 export async function resolveRunId(req: Request): Promise<string> {
   const delegation = req.headers.get('x-floor-delegation');
   if (!delegation) throw new AgentRequestError(401, {error: 'missing_delegation'});
-  const resolved = await convexClient().query(api.runs.resolveDelegation, {
-    delegationId: delegation
-  });
+  const resolved = await retry(() =>
+    convexClient().query(api.runs.resolveDelegation, {delegationId: delegation})
+  );
   if (!resolved) throw new AgentRequestError(403, {error: 'invalid_delegation'});
   return resolved.runId;
 }

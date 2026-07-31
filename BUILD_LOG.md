@@ -431,3 +431,161 @@ enforced by the component's own delegation + `authz.can` machinery.
   the component do the rest, exactly as intended.
 - `AUTHZ_MODE=attenuated` is the deployment's resting state (the fix is active);
   flip the env to `broken` to see the escalation again. Mode is env-only.
+
+## P7 — Product UI
+
+Turns the security story into a live, no-setup product view. Single screen: pick a
+role, start a run, watch the delegation chain hold or leak, read the timeline.
+
+### What was built
+
+- **Guest role switch** (`/api/guest/switch`, `lib/requester.ts`): one tap becomes
+  one of the three real pre-provisioned Kinde users (Requester / Buyer / Director)
+  — no email code. Scopes are derived server-side from the role, not trusted from
+  the client. Real Kinde login (`/api/auth/login`) stays available and takes
+  priority. **This retires the P5/P6 shortcut**: a run now roots the chain in the
+  selected human's real subject and role scopes (`runs.start` records them;
+  `hop.begin` reads them), not an M2M/constant stand-in.
+- **The run**: `/api/runs/trigger` starts from the human session, returns
+  immediately, triggers the Trigger.dev task. Requisition presets + a custom brief
+  + budget. A BYOK field (OpenAI-compatible endpoint) drives the negotiation model;
+  the deterministic path is the default and always works.
+- **Centrepiece — the delegation chain** (`app/components/DelegationChain.tsx`):
+  drawn live as it extends, hop by hop, rooted at the human. Each hop's scope set
+  is rendered as its **dollar ceiling** (`orders:place:t2` → "approve up to
+  $250,000"), never the raw tier. Attenuated: the set shrinks; the ordering hop
+  goes red on denial and shows "this chain can approve up to $50,000, this order is
+  $142,000". Broken: the set grows (new scopes flagged) and the order is approved.
+- **Timeline** (`app/components/Timeline.tsx`): the `runEvents` stream rendered
+  live top-to-bottom in plain language — which agent acted, what it did, what it
+  handed on.
+- **Mode badge**: reads `AUTHZ_MODE` from the server via `config.mode` (Convex
+  reactive query) — shown front and centre, never a client toggle.
+- Live updates use Convex React (`useQuery`) — no polling. Design: ink-navy
+  "authorization ledger" canvas, brass authority accent, jade (holds) vs vermilion
+  (leaks); Space Grotesk / IBM Plex Sans / IBM Plex Mono via next/font.
+- The **ordering agent** was re-provisioned (component `setPolicy`) with all tiers
+  so the HUMAN's delegation is what caps a purchase; `orders.submit` drops
+  `enforceTokenScopes` so the Kinde token proves identity while the human-rooted
+  delegation sets the tier ceiling.
+
+### Verified (same $142,000 requisition, rooted in the real human)
+
+- Attenuated: **Requester → denied**, **Buyer → denied** (`requiredScopes:
+  [orders:place:t2]`), **Director → APPROVED @ $142,000** (holds t2). The role
+  switch is meaningful.
+- Broken: **Requester → APPROVED (escalated) @ $142,000** — a human who can approve
+  nothing roots a chain that grows to `orders:place:t2`.
+- Guest switch + session + human-rooted `runs.start` all work over the API the UI uses.
+- `npm run typecheck`, `npm test` (8 passed), `npm run check:boundary` — green.
+  `npx convex dev --once` — pushed, exit 0.
+
+### Notes
+
+- The three users' real subjects/scopes are compiled into `convex/authz.ts`
+  (`ROLES`) for the guest mapping — user ids, not secrets. Deriving them server-side
+  keeps the guest switch from trusting client-supplied scopes.
+- Deterministic is the public path; BYOK is optional and falls back to
+  deterministic on any error.
+- `AUTHZ_MODE=attenuated` is the resting default (the fix); flip to `broken` to see
+  the escalation. Mode is env-only.
+
+### P7 rework — brand match, ceiling bug, copy
+
+Three fixes after the first cut read as templated and had a display bug.
+
+1. **Connector line bug.** The chain's vertical rail was a single absolutely-
+   positioned element with a fixed `bottom`, so it overshot past the last node
+   into empty space. Replaced it with a per-hop connector
+   (`.hop:not(:last-child)::before`) drawn from each node's dot to the next.
+   The last node has no connector below it, so the line now spans node one to
+   node N and stops. Old `.railLine` removed.
+
+2. **Ceiling showed "$0".** `approvalCeilingCents` returned 0 for any hop with no
+   `orders:place` tier, and the label rendered "ceiling $0" — misleading, since
+   no ordering scope is *no approval authority*, not a $0 ceiling. Added
+   `ceilingLabel(scopes)` reading the highest tier present: t3 → "no ceiling",
+   t2 → "up to $250,000", t1 → "up to $50,000", none → "no approval authority".
+   Verified against a real completed Director attenuated chain in the DB: hops
+   1–2 (sourcing/negotiation) show "no approval authority", hop 3 (ordering)
+   shows "no ceiling" — its real tier, never $0.
+
+3. **Brand + copy.** Pulled the live kinde.com brand (WebFetch was blocked, so
+   curled the site + CSS bundles directly): near-black surfaces (#0f0f0f/#161616),
+   #2b2b2b hairlines, light text, brand blue #0056f1, Inter + Fira Code, plain
+   product voice. Retoned the whole UI to match (was ink-navy/brass "ledger" with
+   Space Grotesk). Rewrote the copy in Kinde's register — cut every theatrical
+   line ("Watch authority hold — or leak", "hold the line", "let a purchase
+   through no one signed off on", "authority only shrinks — the fix"). Hero is now
+   "Delegated authority in an agent run" with a subhead that states the two-mode
+   mechanism; mode badge, chain description, and role descriptions all state what
+   happens plainly.
+
+Verified: `npm run typecheck`, `npm test` (8 passed), `npm run check:boundary`
+green; `npx convex dev --once` pushed (no backend changes this rework — frontend
+only). Dev server left running on http://localhost:3000, AUTHZ_MODE=attenuated.
+Note: the Trigger.dev dev worker's cloud connection is flaky on long uptime and
+`@latest` drifted ahead of the pinned SDK 4.5.7 — pin the CLI (`trigger.dev@4.5.7
+dev`) when running live runs.
+
+### P7 fix — frozen run + real (light) Kinde brand
+
+Two problems: runs froze at run.started, and the "brand match" from the last pass
+was still wrong (dark surfaces + electric blue — guessed, not the real site).
+
+**1. Frozen run — root cause and fix.** The graph's first node threw
+`TypeError: fetch failed` in `mintToken` (floor.ts) — a transient network blip on
+the worker's call to Kinde's token endpoint. The task died and, critically, wrote
+*no terminal event*, so the UI hung at run.started forever. It was not "the worker
+being down" — the worker was up and executed the task. Fixes:
+   - **Resilience.** `mintToken` and the api-client `post` now retry transient
+     `fetch failed` (4 attempts, backoff); the app-side hops in `agent-request.ts`
+     (`/agent/verify` fetch, `resolveDelegation` query) and every route's Convex
+     mutation/action call are wrapped in a shared `retry()`. A non-OK HTTP status
+     is a real answer and is never retried.
+   - **No silent freeze.** The Trigger task wraps `graph.invoke` in try/catch; on
+     any error it POSTs `/api/runs/fail` (authenticated by the run delegation, not
+     a Kinde token — so it works even when minting is what failed), which writes a
+     terminal `run.failed` event. The UI renders a red "This run couldn't proceed"
+     banner + a `run.failed` timeline row.
+   - Run the worker pinned: `npx trigger.dev@4.5.7 dev` (@latest is 4.5.9 and
+     aborts against the 4.5.7 SDK on a version-mismatch guard).
+   - **Proven:** a Director attenuated run now completes end to end — run.started →
+     sourcing → hop 1 → negotiation (winner $142,000) → hop 3 ordering →
+     ordering.order_placed ($142,000) → run.completed.
+
+**2. Real Kinde brand (light).** Re-pulled kinde.com by curl (WebFetch blocked).
+The real site is a **light** system: white background, near-black ink text
+(#0f0f0f), solid black primary buttons, quiet light-gray borders, generous
+whitespace, Inter + Fira Code — no electric blue. The previous pass had guessed a
+dark navy/blue theme. Rebuilt the palette in `globals.css`: `--ink #ffffff`,
+`--text #0f0f0f`, black `--accent`, `--line #e6e6e6`, restrained green/red for
+approved/denied (#157f43 / #c0392b), not neon. Removed the faint background grid
+lines entirely. Layout and copy from the last pass unchanged. Confirmed in the
+served CSS: `--ink:#ffffff`, `--accent:#0f0f0f`, no `#0056f1`, no grid gradient.
+
+Verified: `npm run typecheck`, `npm test` (8 passed), `npm run check:boundary`
+green; `npx convex dev --once` pushed. Dev server + pinned worker left running on
+http://localhost:3000 (AUTHZ_MODE=attenuated). No screenshot — the Chrome
+extension was not connected in this environment.
+
+### P7 spacing fix — timeline column overlap
+
+The timeline's event-kind column was a fixed `150px`, too narrow for the longest
+kind `negotiation.quotes_requested` (28 chars ≈ 200px at 12px mono), so it
+overflowed the track and overlapped the description text. Fixed the grid template
+to `26px max-content 1fr` (was `26px 150px 1fr`) so the kind column sizes exactly
+to the widest kind and auto-adapts if a longer one is ever added; added
+`white-space: nowrap` to `.tlKind` so the kind stays one line and `max-content`
+measures its full width. The `1fr` description column starts after it with the
+12px gap — overlap is now structurally impossible, and every row's description
+left-aligns on the same column. Mobile (≤560px) still stacks kind over text,
+unaffected.
+
+CSS-only (`app/app.module.css`); no backend change, no push. Verified in the
+served CSS (`grid-template-columns: 26px max-content 1fr` + `white-space:nowrap`)
+and against a Director run that emitted `negotiation.quotes_requested` (the
+longest kind, 28 chars) and reached run.completed. `npm run typecheck`,
+`npm test` (8 passed), `npm run check:boundary` green. Dev server + pinned worker
+left running on http://localhost:3000. No screenshot — the Chrome extension was
+not connected in this environment.

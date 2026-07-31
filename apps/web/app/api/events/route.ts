@@ -1,6 +1,6 @@
 import {NextResponse} from 'next/server';
 import {api} from '@/convex/_generated/api';
-import {convexClient, resolveRunId, toErrorResponse, verifyAgent} from '@/lib/agent-request';
+import {convexClient, resolveRunId, retry, toErrorResponse, verifyAgent} from '@/lib/agent-request';
 
 export const runtime = 'nodejs';
 
@@ -14,12 +14,14 @@ export async function POST(req: Request) {
     const payload = (body.payload ?? {}) as Record<string, unknown>;
 
     // Stamp the acting subject onto every event — this is the run's identity trail.
-    const {seq} = await convexClient().mutation(api.events.append, {
-      orgCode: agent.orgCode,
-      runId,
-      kind,
-      payload: {...payload, subject: agent.subject}
-    });
+    const {seq} = await retry(() =>
+      convexClient().mutation(api.events.append, {
+        orgCode: agent.orgCode,
+        runId,
+        kind,
+        payload: {...payload, subject: agent.subject}
+      })
+    );
     return NextResponse.json({seq});
   } catch (error) {
     return toErrorResponse(error);
