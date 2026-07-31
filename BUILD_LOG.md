@@ -611,3 +611,62 @@ CI failed on `next lint`, two items in `app/page.tsx`:
 Lint-only, no convex or behavior change. `npm run lint` clean (no error, no
 warning); `npm run typecheck`, `npm test` (8 passed), `npm run check:boundary`
 green.
+
+## P8 — End-to-end narrative script
+
+One command (`npm run e2e`) that runs the whole story through the REAL trigger
+route + Trigger.dev worker and asserts it, so the demo can't silently rot. Not in
+`npm test` — it needs the live worker and Convex, like the integration tests.
+
+### What it does
+
+- **Stage 1 — attenuated · Buyer · $142,000 → denied.** Sets the deployment to
+  attenuated, starts a run as Buyer. Asserts: 3 hops, every hop ⊆ the Buyer's
+  scopes (chain only shrinks), the ordering hop caps at t1 (no t2/t3), the order
+  is denied with `insufficient_scope` and `requiredScopes: ["orders:place:t2"]`,
+  no `ordering.order_placed` event, no order row (`orders.listByRun`), and the run
+  terminates cleanly (`run.terminated`).
+- **Stage 2 — attenuated · Director · same requisition → placed.** Asserts the
+  order is placed at exactly $142,000, one order row exists, run completes.
+- **Stage 3 — broken · Requester → escalation.** Sets broken, runs as Requester
+  (no ordering authority). Asserts the chain grew past the requester (ordering hop
+  gained `orders:place:t2` the requester never held), the order is placed anyway
+  at $142,000, one order row, run completes.
+- **Restore.** Always sets AUTHZ_MODE back to attenuated before exit — in both the
+  success and failure paths.
+
+### How it works
+
+- Each stage flips the deployment env with `convex env set AUTHZ_MODE …`
+  (`execFileSync`, server-side, never a request), waits for `config.mode` to
+  reflect it, sets the guest role via `/api/guest/switch` (carrying the returned
+  session cookie), starts the run through `/api/runs/trigger`, polls
+  `events.listByRun` until a terminal event, and reads `delegations.listByRun` +
+  `orders.listByRun` — all against the real deployment, no mocks.
+- Deterministic: budget $200,000 → winner $142,000 every time, no LLM.
+- Prints a `✓/✗` line per assertion and a `PASS/FAIL` summary; nonzero exit on the
+  first failed assertion (the remaining stages don't run), attenuated always
+  restored first.
+- **Preflight + worker detection.** Fails fast with a clear message if the app is
+  unreachable, or if a run never progresses past `run.started` (the worker isn't
+  processing) — telling the operator to start them and to pin the worker
+  (`npx trigger.dev@4.5.7 dev`).
+- Added a small `orders.listByRun` Convex query so "no order row" is a real row
+  check, not just inferred from events.
+
+### Verified (STOP gate)
+
+Ran it end to end against the live app + pinned worker — all three stages passed,
+exit 0, attenuated restored:
+
+```
+PASS  Stage 1 (attenuated · Buyer · denied)
+PASS  Stage 2 (attenuated · Director · placed)
+PASS  Stage 3 (broken · Requester · escalation)
+All stages passed.
+Restored AUTHZ_MODE=attenuated.
+```
+
+`npm run typecheck`, `npm test` (8 passed — e2e is a standalone tsx script, not in
+the vitest suite), `npm run check:boundary`, `npm run lint` green; `npx convex dev
+--once` pushed.

@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace apps/web",
+    "e2e": "npm run e2e --workspace apps/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
