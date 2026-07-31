@@ -1,7 +1,6 @@
+import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {ConvexHttpClient} from 'convex/browser';
-import {api} from '../convex/_generated/api';
 import {embed} from '../lib/embeddings';
 import {
   ensureSuppliersCollection,
@@ -14,21 +13,34 @@ import {SEED_ORGS} from './supplier-data';
 // Load apps/web/.env.local (NEXT_PUBLIC_CONVEX_URL, QDRANT_URL, QDRANT_API_KEY).
 process.loadEnvFile(fileURLToPath(new URL('../.env.local', import.meta.url)));
 
+// apps/web dir — the Convex CLI runs from here (it reads CONVEX_DEPLOYMENT).
+const WEB_DIR = fileURLToPath(new URL('..', import.meta.url));
+
+/**
+ * Run an internal Convex function through the CLI. The seed functions are
+ * internal, so they are not on the public API; `convex run` authenticates as the
+ * deployment admin. Returns the parsed JSON result.
+ */
+function convexRun<T>(fn: string, args: unknown): T {
+  const out = execFileSync('npx', ['convex', 'run', fn, JSON.stringify(args)], {
+    cwd: WEB_DIR,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit']
+  });
+  return JSON.parse(out.trim()) as T;
+}
+
 async function main() {
-  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
-  if (!convexUrl) throw new Error('NEXT_PUBLIC_CONVEX_URL is not set');
-  const convex = new ConvexHttpClient(convexUrl);
   const qdrant = qdrantClient();
 
   await ensureSuppliersCollection(qdrant);
 
   for (const org of SEED_ORGS) {
     // 1. Write suppliers to Convex (source of record) and get their ids back.
-    const inserted = await convex.mutation(api.suppliers.seedReplaceOrg, {
-      orgCode: org.orgCode,
-      orgName: org.orgName,
-      suppliers: org.suppliers
-    });
+    const inserted = convexRun<Array<{name: string; supplierId: string}>>(
+      'suppliers:seedReplaceOrg',
+      {orgCode: org.orgCode, orgName: org.orgName, suppliers: org.suppliers}
+    );
     const idByName = new Map(inserted.map((r) => [r.name, r.supplierId]));
 
     // 2. Clear this org's points in Qdrant, then upsert the exact same rows so
@@ -64,7 +76,7 @@ async function main() {
   const collection = await qdrant.getCollection(SUPPLIERS_COLLECTION);
   console.log(`Qdrant "${SUPPLIERS_COLLECTION}" points: ${collection.points_count}`);
   for (const org of SEED_ORGS) {
-    const rows = await convex.query(api.suppliers.listByOrg, {orgCode: org.orgCode});
+    const rows = convexRun<unknown[]>('suppliers:listByOrg', {orgCode: org.orgCode});
     console.log(`Convex suppliers for ${org.orgCode}: ${rows.length}`);
   }
 }

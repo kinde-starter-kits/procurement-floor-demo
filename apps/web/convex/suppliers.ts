@@ -1,5 +1,5 @@
 import {v} from 'convex/values';
-import {mutation, query} from './_generated/server';
+import {internalMutation, internalQuery} from './_generated/server';
 
 const supplierInput = v.object({
   name: v.string(),
@@ -11,9 +11,13 @@ const supplierInput = v.object({
 /**
  * Seed entry point (dev/demo). Upserts the organization row and REPLACES all
  * suppliers for one org, returning the new ids so the seed script can mirror the
- * exact same rows into Qdrant in the same run — the two stores cannot drift.
+ * exact same rows into Qdrant in the same run, so the two stores cannot drift.
+ *
+ * INTERNAL. This wipes and rewrites an org's suppliers, so it is never exposed on
+ * the public API. The seed script runs it through `npx convex run`, which
+ * authenticates as the deployment admin.
  */
-export const seedReplaceOrg = mutation({
+export const seedReplaceOrg = internalMutation({
   args: {
     orgCode: v.string(),
     orgName: v.string(),
@@ -47,8 +51,9 @@ export const seedReplaceOrg = mutation({
   }
 });
 
-/** Suppliers for one org (used to confirm Convex and Qdrant agree). */
-export const listByOrg = query({
+/** Suppliers for one org. INTERNAL — only the seed script reads it, to confirm
+ *  Convex and Qdrant agree. */
+export const listByOrg = internalQuery({
   args: {orgCode: v.string()},
   handler: async (ctx, {orgCode}) =>
     ctx.db
