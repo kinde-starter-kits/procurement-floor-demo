@@ -2,51 +2,68 @@ import {randomUUID} from 'node:crypto';
 import {NextResponse} from 'next/server';
 import {tasks} from '@trigger.dev/sdk/v3';
 import {api} from '@/convex/_generated/api';
-import {AgentRequestError, convexClient, toErrorResponse, verifyAgent} from '@/lib/agent-request';
+import {convexClient, retry, toErrorResponse} from '@/lib/agent-request';
+import {resolveRequester} from '@/lib/requester';
 
 export const runtime = 'nodejs';
 
-// Starts the procurement run task and returns immediately. The graph itself runs
-// inside the Trigger.dev task, not in this handler.
+interface Byok {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+function validByok(x: unknown): Byok | null {
+  const b = x as Partial<Byok> | undefined;
+  if (b && typeof b.baseUrl === 'string' && typeof b.apiKey === 'string' && typeof b.model === 'string') {
+    return {baseUrl: b.baseUrl, apiKey: b.apiKey, model: b.model};
+  }
+  return null;
+}
+
+// Starts a run rooted in the SELECTED HUMAN (guest role or Kinde session). Returns
+// immediately; the graph runs in the Trigger.dev task.
 export async function POST(req: Request) {
   try {
-    const agent = await verifyAgent(req);
-    if (!agent.agentId) {
-      throw new AgentRequestError(403, {error: 'agent_not_registered'});
+    const requester = await resolveRequester();
+    if (!requester) {
+      return NextResponse.json({error: 'pick_a_role'}, {status: 401});
     }
-
     const body = (await req.json().catch(() => ({}))) as {
       title?: string;
       description?: string;
       budgetCents?: number;
+      byok?: unknown;
     };
     const title = body.title ?? 'Untitled requisition';
     const description = body.description ?? '';
     const budgetCents = typeof body.budgetCents === 'number' ? body.budgetCents : 0;
+    const byok = validByok(body.byok);
 
     const runId = randomUUID();
-
-    // Create the requisition, issue the run delegation, emit run.started.
-    const {requisitionId, delegationId} = await convexClient().mutation(api.runs.start, {
-      orgCode: agent.orgCode,
-      subject: agent.subject,
-      agentId: agent.agentId,
-      runId,
-      title,
-      description,
-      budgetCents
-    });
+    const {requisitionId, delegationId} = await retry(() =>
+      convexClient().mutation(api.runs.start, {
+        orgCode: requester.orgCode,
+        requesterSubject: requester.subject,
+        requesterScopes: requester.scopes,
+        requesterRole: requester.role,
+        runId,
+        title,
+        description,
+        budgetCents
+      })
+    );
 
     const baseUrl = process.env.FLOOR_BASE_URL ?? new URL(req.url).origin;
-
     const handle = await tasks.trigger('procurement-run', {
       runId,
+      orgCode: requester.orgCode,
       delegation: delegationId,
       baseUrl,
-      requisition: {requisitionId, title, description, budgetCents}
+      requisition: {requisitionId, title, description, budgetCents},
+      ...(byok ? {byok} : {})
     });
 
-    return NextResponse.json({runId, requisitionId, delegation: delegationId, handle});
+    return NextResponse.json({runId, requisitionId, orgCode: requester.orgCode, handle});
   } catch (error) {
     return toErrorResponse(error);
   }

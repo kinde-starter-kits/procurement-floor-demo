@@ -33,6 +33,9 @@ out/
 .vercel
 next-env.d.ts
 
+# Trigger.dev build cache
+.trigger/
+
 # Environment (secrets — never commit)
 .env
 .env*.local

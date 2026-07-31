@@ -6,6 +6,23 @@ import {AgentAuth, verifyCaller} from '@kinde-oss/kinde-convex-agent-auth';
 const agentAuth = new AgentAuth(components.agentAuth);
 
 /**
+ * Update an agent's registered scopes (admin-only, CLI). The ordering agent is
+ * given all order tiers so the DELEGATION CHAIN (rooted in the human) is what
+ * caps a purchase — a Director may approve tier-2, a Buyer may not.
+ */
+export const setPolicy = internalAction({
+  args: {agentId: v.string(), scopes: v.array(v.string()), allowedTools: v.array(v.string())},
+  handler: async (ctx, args): Promise<null> => {
+    await agentAuth.setAgentPolicy(ctx, {
+      agentId: args.agentId as never,
+      scopes: args.scopes,
+      allowedTools: args.allowedTools
+    });
+    return null;
+  }
+});
+
+/**
  * Register one agent against its Kinde M2M `client_id`.
  *
  * INTERNAL ONLY. `agents.register` is an admin operation — it is never exposed

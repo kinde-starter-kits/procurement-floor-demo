@@ -2,7 +2,7 @@ import {Annotation, END, START, StateGraph} from '@langchain/langgraph';
 import {retry} from '@trigger.dev/sdk/v3';
 import type {SupplierMatch} from '@procurement-floor/api-client';
 import {openSession} from './floor.js';
-import {reviseOffer} from './negotiation-strategy.js';
+import {reviseOffer, type ByokConfig} from './negotiation-strategy.js';
 
 export interface Requisition {
   requisitionId: string;
@@ -31,6 +31,7 @@ const State = Annotation.Root({
   runId: Annotation<string>(),
   delegation: Annotation<string>(),
   baseUrl: Annotation<string>(),
+  byok: Annotation<ByokConfig | undefined>(),
   shortlist: Annotation<SupplierMatch[]>({reducer: (_a, b) => b, default: () => []}),
   quotes: Annotation<QuoteWork[]>({reducer: (_a, b) => b, default: () => []}),
   winner: Annotation<QuoteWork | null>({reducer: (_a, b) => b, default: () => null}),
@@ -107,11 +108,11 @@ async function negotiationNode(state: typeof State.State) {
         const revised: QuoteWork[] = [];
         for (const q of quotes) {
           const target = roundAmount(budgetCents, q.factor, round);
-          const amountCents = await reviseOffer(target, {
-            round,
-            supplierName: q.name,
-            requisitionTitle: state.requisition.title
-          });
+          const amountCents = await reviseOffer(
+            target,
+            {round, supplierName: q.name, requisitionTitle: state.requisition.title},
+            state.byok
+          );
           const {quoteId} = await client.createQuote({
             requisitionId,
             supplierId: q.supplierId,

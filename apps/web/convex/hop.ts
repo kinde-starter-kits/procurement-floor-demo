@@ -6,7 +6,6 @@ import {
   authzMode,
   brokenNextScopes,
   orderTier,
-  REQUESTER_SUBJECT,
   stepNeeds,
   type Step
 } from './authz';
@@ -16,13 +15,10 @@ const HOUR = 60 * 60 * 1000;
 /**
  * Mint this node's hop of the delegation chain.
  *
- * BROKEN: parent ∪ next-step needs — grows (recorded in the app delegations
- * table, no enforcement).
- *
- * ATTENUATED: the hop carries requester-ceiling ∩ agent scopes — shrinks. The
- * chain is issued through the COMPONENT's delegations API (rooted at the human
- * requester); the app row is just a readable mirror. For the ordering hop we
- * also start a component instance so `authz.can` can decide the order.
+ * BROKEN: parent ∪ next-step needs — grows (app delegations table, no enforcement).
+ * ATTENUATED: requester ceiling ∩ this agent's scopes — shrinks. Issued through the
+ * COMPONENT, rooted at the real selected human. The ordering hop also starts a
+ * component instance so `authz.can` can decide the order.
  */
 export const begin = mutation({
   args: {
@@ -46,20 +42,27 @@ export const begin = mutation({
     const hop = (parent?.hop ?? 0) + 1;
 
     let scopes: string[];
-    let componentDelegationId: string | null = null;
     let instanceId: string | null = null;
 
     if (mode === 'broken') {
       scopes = brokenNextScopes(parent?.scopes ?? [], stepNeeds(step, args.amountCents));
     } else {
-      // Attenuated: requester ceiling ∩ this agent's own scopes.
-      scopes = attenuatedHopScopes(args.callerScopes);
-      // Issue through the component, rooted at the human requester. The
-      // component refuses any scope the agent does not itself hold.
-      componentDelegationId = await ctx.runMutation(components.agentAuth.delegations.issue, {
+      // Root the chain in the run's real human (recorded at run.started, seq 0).
+      const started = await ctx.db
+        .query('runEvents')
+        .withIndex('by_run_seq', (q) => q.eq('orgCode', args.orgCode).eq('runId', args.runId))
+        .first();
+      const rp = started?.payload as {subject?: string; requesterScopes?: string[]} | undefined;
+      const requesterSubject = rp?.subject ?? '';
+      const requesterScopes = rp?.requesterScopes ?? [];
+
+      scopes = attenuatedHopScopes(requesterScopes, step);
+      // Issue through the component, rooted at the human requester. The component
+      // refuses any scope the agent does not itself hold.
+      await ctx.runMutation(components.agentAuth.delegations.issue, {
         agentId: args.callerAgentId as never,
         issuerKind: 'user',
-        issuerSubject: REQUESTER_SUBJECT,
+        issuerSubject: requesterSubject,
         scopes,
         resources: [`run:${args.runId}`],
         expiresAt: Date.now() + HOUR
@@ -68,7 +71,7 @@ export const begin = mutation({
         instanceId = await ctx.runMutation(components.agentAuth.instances.start, {
           agentId: args.callerAgentId as never,
           runId: `${args.runId}:ordering`,
-          actingForSubject: REQUESTER_SUBJECT,
+          actingForSubject: requesterSubject,
           orgCode: args.orgCode,
           expiresAt: Date.now() + HOUR
         });
@@ -107,6 +110,6 @@ export const begin = mutation({
       at: Date.now()
     });
 
-    return {hop, scopes, instanceId, componentDelegationId};
+    return {hop, scopes, instanceId};
   }
 });

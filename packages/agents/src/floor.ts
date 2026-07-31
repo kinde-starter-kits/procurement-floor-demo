@@ -1,11 +1,35 @@
 import {createFloorClient, type FloorClient} from '@procurement-floor/api-client';
 import {kindeConfig, nodeCredentials, type NodeName} from './config.js';
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * `fetch` with retry on transient network failures (`TypeError: fetch failed`
+ * from a dropped connection). Kinde's token endpoint is reliable, but the worker
+ * sandbox's network occasionally blips; without this a single blip kills the run.
+ */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  attempts = 4
+): Promise<Response> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      lastError = err;
+      if (i < attempts - 1) await sleep(400 * (i + 1));
+    }
+  }
+  throw lastError;
+}
+
 /** Mint a Kinde M2M access token from a node's own client credentials. */
 async function mintToken(node: NodeName): Promise<string> {
   const {domain, audience} = kindeConfig();
   const {clientId, clientSecret} = nodeCredentials(node);
-  const res = await fetch(`https://${domain}/oauth2/token`, {
+  const res = await fetchWithRetry(`https://${domain}/oauth2/token`, {
     method: 'POST',
     headers: {'content-type': 'application/x-www-form-urlencoded'},
     body: new URLSearchParams({

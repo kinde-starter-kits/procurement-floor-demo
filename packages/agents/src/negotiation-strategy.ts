@@ -13,10 +13,20 @@ export interface RevisionContext {
   requisitionTitle: string;
 }
 
-async function byokRevision(targetCents: number, ctx: RevisionContext): Promise<number> {
-  const baseUrl = process.env.BYOK_BASE_URL;
-  const apiKey = process.env.BYOK_API_KEY;
-  const model = process.env.BYOK_MODEL;
+export interface ByokConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+async function byokRevision(
+  targetCents: number,
+  ctx: RevisionContext,
+  byok?: ByokConfig
+): Promise<number> {
+  const baseUrl = byok?.baseUrl ?? process.env.BYOK_BASE_URL;
+  const apiKey = byok?.apiKey ?? process.env.BYOK_API_KEY;
+  const model = byok?.model ?? process.env.BYOK_MODEL;
   if (!baseUrl || !apiKey || !model) return targetCents;
 
   try {
@@ -56,9 +66,13 @@ async function byokRevision(targetCents: number, ctx: RevisionContext): Promise<
  * target unchanged, so the run is exactly reproducible. BYOK (optional) may
  * return a different (lower) figure from a real model, falling back to the target.
  */
-export function reviseOffer(targetCents: number, ctx: RevisionContext): Promise<number> {
-  if (process.env.NEGOTIATION_STRATEGY === 'byok') {
-    return byokRevision(targetCents, ctx);
+export function reviseOffer(
+  targetCents: number,
+  ctx: RevisionContext,
+  byok?: ByokConfig
+): Promise<number> {
+  if (byok || process.env.NEGOTIATION_STRATEGY === 'byok') {
+    return byokRevision(targetCents, ctx, byok);
   }
   return Promise.resolve(targetCents);
 }
