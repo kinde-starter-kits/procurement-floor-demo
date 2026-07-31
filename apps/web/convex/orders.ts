@@ -1,8 +1,23 @@
 import {v} from 'convex/values';
 import {authorize} from '@kinde-oss/kinde-convex-agent-auth';
-import {action, mutation} from './_generated/server';
+import {action, mutation, query} from './_generated/server';
 import {api, components} from './_generated/api';
 import {authzMode, orderTier} from './authz';
+
+/** Orders placed for a run (correlationId === runId). Used by the e2e script to
+ *  assert whether an order row exists. amountCents is returned as a plain number. */
+export const listByRun = query({
+  args: {orgCode: v.string(), runId: v.string()},
+  handler: async (ctx, {orgCode, runId}) => {
+    const rows = await ctx.db
+      .query('orders')
+      .withIndex('by_org', (q) => q.eq('orgCode', orgCode))
+      .collect();
+    return rows
+      .filter((o) => o.correlationId === runId)
+      .map((o) => ({supplier: o.placedByAgent, amountCents: Number(o.amountCents), status: o.status}));
+  }
+});
 
 /** Insert an order row. */
 export const place = mutation({
