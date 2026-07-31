@@ -102,8 +102,13 @@ export default function Home() {
     setStarting(false);
   }
 
-  const events =
-    useQuery(api.events.listByRun, run ? {orgCode: run.orgCode, runId: run.runId} : 'skip') ?? [];
+  const eventsRaw = useQuery(
+    api.events.listByRun,
+    run ? {orgCode: run.orgCode, runId: run.runId} : 'skip'
+  );
+  // Stabilize the array identity so the `?? []` fallback doesn't change the
+  // useMemo deps (below) on every render.
+  const events = useMemo(() => eventsRaw ?? [], [eventsRaw]);
   const chain =
     useQuery(api.delegations.listByRun, run ? {orgCode: run.orgCode, runId: run.runId} : 'skip') ?? [];
 
@@ -155,6 +160,10 @@ export default function Home() {
                 </button>
               ))}
             </div>
+            {/* /api/auth/login is a Kinde route handler (server redirect to
+                Kinde), not a Next page — next/link is not appropriate here, so a
+                plain anchor is correct and the page-link rule is disabled. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a className={s.kindeLink} href="/api/auth/login">
               or <u>sign in with Kinde</u> for real →
             </a>

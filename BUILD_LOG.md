@@ -589,3 +589,25 @@ longest kind, 28 chars) and reached run.completed. `npm run typecheck`,
 `npm test` (8 passed), `npm run check:boundary` green. Dev server + pinned worker
 left running on http://localhost:3000. No screenshot — the Chrome extension was
 not connected in this environment.
+
+### P7 CI fix — lint on the Kinde sign-in link
+
+CI failed on `next lint`, two items in `app/page.tsx`:
+
+1. **Error (blocked merge).** The "sign in with Kinde" link was a raw
+   `<a href="/api/auth/login">`, which `@next/next/no-html-link-for-pages` blocks.
+   But `/api/auth/login` is a Kinde route handler (server redirect), not a Next
+   page — `next/link` is the wrong tool and must not point at an API route. Kept
+   the anchor (correct here) and disabled the rule for that one line with an
+   inline `eslint-disable-next-line` + a comment explaining it's an API route.
+
+2. **Warning.** `const events = useQuery(...) ?? []` — the `?? []` fallback made a
+   fresh array identity each render, so the `useMemo(computeVerdict, [events])`
+   deps changed every render (`react-hooks/exhaustive-deps`). Split into
+   `const eventsRaw = useQuery(...)` and `const events = useMemo(() => eventsRaw ??
+   [], [eventsRaw])` so the array is stable and the deps only change when the
+   query result does.
+
+Lint-only, no convex or behavior change. `npm run lint` clean (no error, no
+warning); `npm run typecheck`, `npm test` (8 passed), `npm run check:boundary`
+green.
