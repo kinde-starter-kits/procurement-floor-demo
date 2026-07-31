@@ -670,3 +670,52 @@ Restored AUTHZ_MODE=attenuated.
 `npm run typecheck`, `npm test` (8 passed — e2e is a standalone tsx script, not in
 the vitest suite), `npm run check:boundary`, `npm run lint` green; `npx convex dev
 --once` pushed.
+
+## P9 — README, changelog, deploy
+
+The last phase: documentation, a first release changelog, seed lockdown, a secret
+audit, and the Vercel deploy guide.
+
+### Docs
+
+- Rewrote `README.md` for a cold reader, in prose, held to the house writing
+  standard (active voice, short sentences, plain words, one term per concept —
+  "agent" stays "agent"). It covers what the demo shows, the two modes and the
+  server-side `AUTHZ_MODE` read, the stack, the Kinde objects to create, the full
+  env-var list for all three places (Convex deployment, web app, worker), Qdrant
+  local Docker and the two-value swap to Cloud, the pinned worker, how to run
+  locally, and how to run every check.
+- Honest Kinde framing in the README: Kinde issues and verifies identity and
+  scopes at each hop; the attenuation chain is the agent-auth component, not
+  Kinde's core product. Noted the vendored tarball until `@kinde-oss` publishes.
+- `CHANGELOG.md`: a concise `0.1.0` first-release entry.
+- `DEPLOY.md`: exact Vercel dashboard steps and the full env-var list. Answers the
+  worker question honestly: agent runs do not complete on Vercel alone. The graph
+  runs in a Trigger.dev task, and that task needs a worker outside Vercel (run it
+  locally or `npx trigger.dev@4.5.7 deploy`). The deployed Vercel demo shows the
+  sign-in, guest role switch, requisition form, live mode, and the chain and
+  timeline views; a full run needs the worker too.
+
+### Pre-deploy hardening
+
+- **Seed lockdown.** `suppliers.seedReplaceOrg` (a destructive wipe-and-replace)
+  and `suppliers.listByOrg` were public mutations/queries so the seed script could
+  call them. Both are now `internalMutation`/`internalQuery`, off the public API.
+  The seed script runs them through `npx convex run`, which authenticates as the
+  deployment admin. Confirmed: they are gone from `api.d.ts`, a public
+  `ConvexHttpClient` call to `seedReplaceOrg` is rejected, and `npm run seed`
+  still seeds 13 + 13 into Convex and Qdrant.
+- **Secret audit.** No `.env` file is tracked; both are gitignored. No client
+  secret, Trigger key, personal access token, or signing secret appears in any
+  tracked file. The only identifier-like matches are the M2M client ids (the
+  public `azp`/`sub` claims) in the P4 fixture and the Kinde user subjects in
+  `authz.ts` — both are public identifiers, not credentials. `MODE`, `AUTHZ_MODE`,
+  and `KINDE_AUDIENCE` are read from env, never hardcoded; they live on the Convex
+  deployment.
+
+### Verified (STOP gate)
+
+`npm run typecheck`, `npm test` (8 passed), `npm run check:boundary`, `npm run
+lint` all green. `npx convex dev --once` pushed. `npm run seed` works through the
+admin CLI after the lockdown. The e2e narrative passes all three stages through
+the real worker (the seed lockdown does not touch the graph run).
